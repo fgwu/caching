@@ -1,0 +1,11 @@
+*.o
+*.d
+
+db_bench
+make_config.mk
+result.log
+
+tmp.log
+util/build_version.cc
+
+*~
