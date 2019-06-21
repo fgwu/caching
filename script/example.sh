@@ -1,9 +1,8 @@
 #!/bin/bash
 
-echo hello world!
+# test different key size
 
-# ./db_bench --key_size 10 > tmp.log
-# cat tmp.log | grep micros | awk '{print $3, $5, $7}'
+echo hello world!
 
 :> result.log
 
