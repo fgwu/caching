@@ -9,3 +9,5 @@ tmp.log
 util/build_version.cc
 
 *~
+
+cscope*
