@@ -9,16 +9,17 @@
 
 #include "rocksdb/cache.h"
 
+#include "cache/clock_cache.h"
+#include "cache/lru_cache.h"
+#include "cache/uni_cache.h"
+#include "test_util/testharness.h"
+#include "util/coding.h"
+#include "util/string_util.h"
 #include <forward_list>
 #include <functional>
 #include <iostream>
 #include <string>
 #include <vector>
-#include "cache/clock_cache.h"
-#include "cache/lru_cache.h"
-#include "test_util/testharness.h"
-#include "util/coding.h"
-#include "util/string_util.h"
 
 namespace rocksdb {
 
@@ -39,6 +40,7 @@ static int DecodeValue(void* v) {
 
 const std::string kLRU = "lru";
 const std::string kClock = "clock";
+const std::string kUni = "uni";
 
 void dumbDeleter(const Slice& /*key*/, void* /*value*/) {}
 
@@ -83,6 +85,9 @@ class CacheTest : public testing::TestWithParam<std::string> {
     if (type == kClock) {
       return NewClockCache(capacity);
     }
+    if (type == kUni) {
+      return NewUniCache(capacity);
+    }
     return nullptr;
   }
 
@@ -94,6 +99,9 @@ class CacheTest : public testing::TestWithParam<std::string> {
     }
     if (type == kClock) {
       return NewClockCache(capacity, num_shard_bits, strict_capacity_limit);
+    }
+    if (type == kUni) {
+      return NewUniCache(capacity, num_shard_bits, strict_capacity_limit);
     }
     return nullptr;
   }
@@ -671,6 +679,9 @@ TEST_P(CacheTest, ApplyToAllCacheEntiresTest) {
 }
 
 TEST_P(CacheTest, DefaultShardBits) {
+  if (GetParam() != kLRU) {
+    return;
+  }
   // test1: set the flag to false. Insert more keys than capacity. See if they
   // all go through.
   std::shared_ptr<Cache> cache = NewCache(16 * 1024L * 1024L);
@@ -690,9 +701,10 @@ TEST_P(CacheTest, DefaultShardBits) {
 std::shared_ptr<Cache> (*new_clock_cache_func)(size_t, int,
                                                bool) = NewClockCache;
 INSTANTIATE_TEST_CASE_P(CacheTestInstance, CacheTest,
-                        testing::Values(kLRU, kClock));
+                        testing::Values(kLRU, kClock, kUni));
 #else
-INSTANTIATE_TEST_CASE_P(CacheTestInstance, CacheTest, testing::Values(kLRU));
+INSTANTIATE_TEST_CASE_P(CacheTestInstance, CacheTest,
+                        testing::Values(kLRU, kUni));
 #endif  // SUPPORT_CLOCK_CACHE
 
 }  // namespace rocksdb

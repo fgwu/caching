@@ -486,6 +486,7 @@ set(SOURCES
         cache/clock_cache.cc
         cache/lru_cache.cc
         cache/sharded_cache.cc
+	cache/uni_cache.cc
         db/builder.cc
         db/c.cc
         db/column_family.cc
