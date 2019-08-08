@@ -118,6 +118,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.wal_recovery_mode = immutable_db_options.wal_recovery_mode;
   options.allow_2pc = immutable_db_options.allow_2pc;
   options.row_cache = immutable_db_options.row_cache;
+  options.uni_cache = immutable_db_options.uni_cache;
 #ifndef ROCKSDB_LITE
   options.wal_filter = immutable_db_options.wal_filter;
 #endif  // ROCKSDB_LITE
@@ -1406,6 +1407,7 @@ std::unordered_map<std::string, OptionTypeInfo>
         /*
          // not yet supported
           std::shared_ptr<Cache> row_cache;
+          std::shared_ptr<Cache> uni_cache;
           std::shared_ptr<DeleteScheduler> delete_scheduler;
           std::shared_ptr<Logger> info_log;
           std::shared_ptr<RateLimiter> rate_limiter;
@@ -1449,7 +1451,7 @@ std::unordered_map<std::string, OptionTypeInfo>
         {"disableDataSync",
          {0, OptionType::kBoolean, OptionVerificationType::kDeprecated, false,
           0}},
-        {"disable_data_sync",  // for compatibility
+        {"disable_data_sync", // for compatibility
          {0, OptionType::kBoolean, OptionVerificationType::kDeprecated, false,
           0}},
         {"enable_thread_tracking",
@@ -1637,7 +1639,7 @@ std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct DBOptions, preserve_deletes), OptionType::kBoolean,
           OptionVerificationType::kNormal, false,
           offsetof(struct ImmutableDBOptions, preserve_deletes)}},
-        {"concurrent_prepare",  // Deprecated by two_write_queues
+        {"concurrent_prepare", // Deprecated by two_write_queues
          {0, OptionType::kBoolean, OptionVerificationType::kDeprecated, false,
           0}},
         {"two_write_queues",

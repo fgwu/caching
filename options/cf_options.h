@@ -114,6 +114,7 @@ struct ImmutableCFOptions {
   std::vector<std::shared_ptr<EventListener>> listeners;
 
   std::shared_ptr<Cache> row_cache;
+  std::shared_ptr<Cache> uni_cache;
 
   uint32_t max_subcompactions;
 

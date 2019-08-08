@@ -20,8 +20,8 @@ namespace rocksdb {
 ImmutableCFOptions::ImmutableCFOptions(const Options& options)
     : ImmutableCFOptions(ImmutableDBOptions(options), options) {}
 
-ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
-                                       const ColumnFamilyOptions& cf_options)
+ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions &db_options,
+                                       const ColumnFamilyOptions &cf_options)
     : compaction_style(cf_options.compaction_style),
       compaction_pri(cf_options.compaction_pri),
       user_comparator(cf_options.comparator),
@@ -38,8 +38,7 @@ ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
       info_log(db_options.info_log.get()),
       statistics(db_options.statistics.get()),
       rate_limiter(db_options.rate_limiter.get()),
-      info_log_level(db_options.info_log_level),
-      env(db_options.env),
+      info_log_level(db_options.info_log_level), env(db_options.env),
       allow_mmap_reads(db_options.allow_mmap_reads),
       allow_mmap_writes(db_options.allow_mmap_writes),
       db_paths(db_options.db_paths),
@@ -67,8 +66,8 @@ ImmutableCFOptions::ImmutableCFOptions(const ImmutableDBOptions& db_options,
       force_consistency_checks(cf_options.force_consistency_checks),
       allow_ingest_behind(db_options.allow_ingest_behind),
       preserve_deletes(db_options.preserve_deletes),
-      listeners(db_options.listeners),
-      row_cache(db_options.row_cache),
+      listeners(db_options.listeners), row_cache(db_options.row_cache),
+      uni_cache(db_options.uni_cache),
       max_subcompactions(db_options.max_subcompactions),
       memtable_insert_with_hint_prefix_extractor(
           cf_options.memtable_insert_with_hint_prefix_extractor.get()),

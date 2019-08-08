@@ -75,6 +75,12 @@ TableCache::TableCache(const ImmutableCFOptions& ioptions,
       cache_(cache),
       immortal_tables_(false),
       block_cache_tracer_(block_cache_tracer) {
+  assert(!ioptions_.uni_cache || !ioptions_.row_cache); // cannot have both
+  if (ioptions_.uni_cache) {
+    // If the same cache is shared by multiple instances, we need to
+    // disambiguate its entries.
+    PutVarint64(&uni_cache_id_, ioptions_.uni_cache->NewId());
+  }
   if (ioptions_.row_cache) {
     // If the same cache is shared by multiple instances, we need to
     // disambiguate its entries.
@@ -306,15 +312,18 @@ Status TableCache::Get(const ReadOptions& options,
                        HistogramImpl* file_read_hist, bool skip_filters,
                        int level) {
   auto& fd = file_meta.fd;
-  std::string* row_cache_entry = nullptr;
+  std::string *kv_cache_entry = nullptr;
   bool done = false;
 #ifndef ROCKSDB_LITE
   IterKey row_cache_key;
-  std::string row_cache_entry_buffer;
+  std::string kv_cache_entry_buffer;
 
   // Check row cache if enabled. Since row cache does not currently store
   // sequence numbers, we cannot use it if we need to fetch the sequence.
-  if (ioptions_.row_cache && !get_context->NeedToReadSequence()) {
+  // if uni_cache has return result, we skip row_cache. As uni_cache can
+  // well replace row_cache
+  if ((ioptions_.uni_cache || ioptions_.row_cache) &&
+      !get_context->NeedToReadSequence()) {
     uint64_t fd_number = fd.GetNumber();
     auto user_key = ExtractUserKey(k);
     // We use the user key as cache key instead of the internal key,
@@ -333,34 +342,66 @@ Status TableCache::Get(const ReadOptions& options,
     row_cache_key.TrimAppend(row_cache_key.Size(), user_key.data(),
                              user_key.size());
 
-    if (auto row_handle =
-            ioptions_.row_cache->Lookup(row_cache_key.GetUserKey())) {
-      // Cleanable routine to release the cache entry
-      Cleanable value_pinner;
-      auto release_cache_entry_func = [](void* cache_to_clean,
-                                         void* cache_handle) {
-        ((Cache*)cache_to_clean)->Release((Cache::Handle*)cache_handle);
-      };
-      auto found_row_cache_entry = static_cast<const std::string*>(
-          ioptions_.row_cache->Value(row_handle));
-      // If it comes here value is located on the cache.
-      // found_row_cache_entry points to the value on cache,
-      // and value_pinner has cleanup procedure for the cached entry.
-      // After replayGetContextLog() returns, get_context.pinnable_slice_
-      // will point to cache entry buffer (or a copy based on that) and
-      // cleanup routine under value_pinner will be delegated to
-      // get_context.pinnable_slice_. Cache entry is released when
-      // get_context.pinnable_slice_ is reset.
-      value_pinner.RegisterCleanup(release_cache_entry_func,
-                                   ioptions_.row_cache.get(), row_handle);
-      replayGetContextLog(*found_row_cache_entry, user_key, get_context,
-                          &value_pinner);
-      RecordTick(ioptions_.statistics, ROW_CACHE_HIT);
-      done = true;
-    } else {
-      // Not found, setting up the replay log.
-      RecordTick(ioptions_.statistics, ROW_CACHE_MISS);
-      row_cache_entry = &row_cache_entry_buffer;
+    if (ioptions_.uni_cache) {
+      if (auto row_handle =
+              ioptions_.uni_cache->Lookup(row_cache_key.GetUserKey())) {
+        // Cleanable routine to release the cache entry
+        Cleanable value_pinner;
+        auto release_cache_entry_func = [](void *cache_to_clean,
+                                           void *cache_handle) {
+          ((Cache *)cache_to_clean)->Release((Cache::Handle *)cache_handle);
+        };
+        auto found_kv_cache_entry = static_cast<const std::string *>(
+            ioptions_.uni_cache->Value(row_handle));
+        // If it comes here value is located on the cache.
+        // found_kv_cache_entry points to the value on cache,
+        // and value_pinner has cleanup procedure for the cached entry.
+        // After replayGetContextLog() returns, get_context.pinnable_slice_
+        // will point to cache entry buffer (or a copy based on that) and
+        // cleanup routine under value_pinner will be delegated to
+        // get_context.pinnable_slice_. Cache entry is released when
+        // get_context.pinnable_slice_ is reset.
+        value_pinner.RegisterCleanup(release_cache_entry_func,
+                                     ioptions_.uni_cache.get(), row_handle);
+        replayGetContextLog(*found_kv_cache_entry, user_key, get_context,
+                            &value_pinner);
+        RecordTick(ioptions_.statistics, KV_CACHE_HIT);
+        done = true;
+      } else {
+        // Not found, setting up the replay log.
+        RecordTick(ioptions_.statistics, KV_CACHE_MISS);
+        kv_cache_entry = &kv_cache_entry_buffer;
+      }
+    } else if (ioptions_.row_cache) {
+      if (auto row_handle =
+              ioptions_.row_cache->Lookup(row_cache_key.GetUserKey())) {
+        // Cleanable routine to release the cache entry
+        Cleanable value_pinner;
+        auto release_cache_entry_func = [](void *cache_to_clean,
+                                           void *cache_handle) {
+          ((Cache *)cache_to_clean)->Release((Cache::Handle *)cache_handle);
+        };
+        auto found_kv_cache_entry = static_cast<const std::string *>(
+            ioptions_.row_cache->Value(row_handle));
+        // If it comes here value is located on the cache.
+        // found_kv_cache_entry points to the value on cache,
+        // and value_pinner has cleanup procedure for the cached entry.
+        // After replayGetContextLog() returns, get_context.pinnable_slice_
+        // will point to cache entry buffer (or a copy based on that) and
+        // cleanup routine under value_pinner will be delegated to
+        // get_context.pinnable_slice_. Cache entry is released when
+        // get_context.pinnable_slice_ is reset.
+        value_pinner.RegisterCleanup(release_cache_entry_func,
+                                     ioptions_.row_cache.get(), row_handle);
+        replayGetContextLog(*found_kv_cache_entry, user_key, get_context,
+                            &value_pinner);
+        RecordTick(ioptions_.statistics, ROW_CACHE_HIT);
+        done = true;
+      } else {
+        // Not found, setting up the replay log.
+        RecordTick(ioptions_.statistics, ROW_CACHE_MISS);
+        kv_cache_entry = &kv_cache_entry_buffer;
+      }
     }
   }
 #endif  // ROCKSDB_LITE
@@ -390,7 +431,7 @@ Status TableCache::Get(const ReadOptions& options,
       }
     }
     if (s.ok()) {
-      get_context->SetReplayLog(row_cache_entry);  // nullptr if no cache.
+      get_context->SetReplayLog(kv_cache_entry); // nullptr if no cache.
       s = t->Get(options, k, get_context, prefix_extractor, skip_filters);
       get_context->SetReplayLog(nullptr);
     } else if (options.read_tier == kBlockCacheTier && s.IsIncomplete()) {
@@ -403,12 +444,17 @@ Status TableCache::Get(const ReadOptions& options,
 
 #ifndef ROCKSDB_LITE
   // Put the replay log in row cache only if something was found.
-  if (!done && s.ok() && row_cache_entry && !row_cache_entry->empty()) {
+  if (!done && s.ok() && kv_cache_entry && !kv_cache_entry->empty()) {
     size_t charge =
-        row_cache_key.Size() + row_cache_entry->size() + sizeof(std::string);
-    void* row_ptr = new std::string(std::move(*row_cache_entry));
-    ioptions_.row_cache->Insert(row_cache_key.GetUserKey(), row_ptr, charge,
-                                &DeleteEntry<std::string>);
+        row_cache_key.Size() + kv_cache_entry->size() + sizeof(std::string);
+    void *row_ptr = new std::string(std::move(*kv_cache_entry));
+    if (ioptions_.uni_cache) {
+      ioptions_.uni_cache->Insert(row_cache_key.GetUserKey(), row_ptr, charge,
+                                  &DeleteEntry<std::string>);
+    } else if (ioptions_.row_cache) {
+      ioptions_.row_cache->Insert(row_cache_key.GetUserKey(), row_ptr, charge,
+                                  &DeleteEntry<std::string>);
+    }
   }
 #endif  // ROCKSDB_LITE
 

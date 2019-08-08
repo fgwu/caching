@@ -18,23 +18,18 @@ namespace rocksdb {
 
 ImmutableDBOptions::ImmutableDBOptions() : ImmutableDBOptions(Options()) {}
 
-ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
+ImmutableDBOptions::ImmutableDBOptions(const DBOptions &options)
     : create_if_missing(options.create_if_missing),
       create_missing_column_families(options.create_missing_column_families),
       error_if_exists(options.error_if_exists),
-      paranoid_checks(options.paranoid_checks),
-      env(options.env),
+      paranoid_checks(options.paranoid_checks), env(options.env),
       rate_limiter(options.rate_limiter),
-      sst_file_manager(options.sst_file_manager),
-      info_log(options.info_log),
+      sst_file_manager(options.sst_file_manager), info_log(options.info_log),
       info_log_level(options.info_log_level),
       max_file_opening_threads(options.max_file_opening_threads),
-      statistics(options.statistics),
-      use_fsync(options.use_fsync),
-      db_paths(options.db_paths),
-      db_log_dir(options.db_log_dir),
-      wal_dir(options.wal_dir),
-      max_subcompactions(options.max_subcompactions),
+      statistics(options.statistics), use_fsync(options.use_fsync),
+      db_paths(options.db_paths), db_log_dir(options.db_log_dir),
+      wal_dir(options.wal_dir), max_subcompactions(options.max_subcompactions),
       max_background_flushes(options.max_background_flushes),
       max_log_file_size(options.max_log_file_size),
       log_file_time_to_roll(options.log_file_time_to_roll),
@@ -71,8 +66,8 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       write_thread_slow_yield_usec(options.write_thread_slow_yield_usec),
       skip_stats_update_on_db_open(options.skip_stats_update_on_db_open),
       wal_recovery_mode(options.wal_recovery_mode),
-      allow_2pc(options.allow_2pc),
-      row_cache(options.row_cache),
+      allow_2pc(options.allow_2pc), row_cache(options.row_cache),
+      uni_cache(options.uni_cache),
 #ifndef ROCKSDB_LITE
       wal_filter(options.wal_filter),
 #endif  // ROCKSDB_LITE
@@ -194,6 +189,15 @@ void ImmutableDBOptions::Dump(Logger* log) const {
   ROCKS_LOG_HEADER(log,
                    "           Options.write_thread_slow_yield_usec: %" PRIu64,
                    write_thread_slow_yield_usec);
+  if (uni_cache) {
+    ROCKS_LOG_HEADER(
+        log,
+        "                              Options.uni_cache: %" ROCKSDB_PRIszt,
+        uni_cache->GetCapacity());
+  } else {
+    ROCKS_LOG_HEADER(log,
+                     "                              Options.uni_cache: None");
+  }
   if (row_cache) {
     ROCKS_LOG_HEADER(
         log,

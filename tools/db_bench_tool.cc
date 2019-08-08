@@ -486,6 +486,10 @@ DEFINE_int64(row_cache_size, 0,
              "Number of bytes to use as a cache of individual rows"
              " (0 = disabled).");
 
+DEFINE_int64(uni_cache_size, 0,
+             "Number of bytes to use as a cache of KV, KP, KVR and KPR"
+             " (0 = disabled).");
+
 DEFINE_int32(open_files, rocksdb::Options().max_open_files,
              "Maximum number of files to keep open at the same time"
              " (use default if == 0)");
@@ -3687,12 +3691,21 @@ class Benchmark {
             FLAGS_bloom_bits, FLAGS_use_block_based_filter));
       }
     }
-    if (FLAGS_row_cache_size) {
+    // if uni_cache is in use, row_cache will be disabled.
+    if (!FLAGS_uni_cache_size && FLAGS_row_cache_size) {
       if (FLAGS_cache_numshardbits >= 1) {
         options.row_cache =
             NewLRUCache(FLAGS_row_cache_size, FLAGS_cache_numshardbits);
       } else {
         options.row_cache = NewLRUCache(FLAGS_row_cache_size);
+      }
+    }
+    if (FLAGS_uni_cache_size) {
+      if (FLAGS_cache_numshardbits >= 1) {
+        options.uni_cache =
+            NewLRUCache(FLAGS_uni_cache_size, FLAGS_cache_numshardbits);
+      } else {
+        options.uni_cache = NewLRUCache(FLAGS_uni_cache_size);
       }
     }
     if (FLAGS_enable_io_prio) {

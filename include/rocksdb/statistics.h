@@ -109,12 +109,12 @@ enum Tickers : uint32_t {
    * COMPACTION_KEY_DROP_* count the reasons for key drop during compaction
    * There are 4 reasons currently.
    */
-  COMPACTION_KEY_DROP_NEWER_ENTRY,  // key was written with a newer value.
-                                    // Also includes keys dropped for range del.
-  COMPACTION_KEY_DROP_OBSOLETE,     // The key is obsolete.
-  COMPACTION_KEY_DROP_RANGE_DEL,    // key was covered by a range tombstone.
-  COMPACTION_KEY_DROP_USER,  // user compaction function has dropped the key.
-  COMPACTION_RANGE_DEL_DROP_OBSOLETE,  // all keys in range were deleted.
+  COMPACTION_KEY_DROP_NEWER_ENTRY, // key was written with a newer value.
+                                   // Also includes keys dropped for range del.
+  COMPACTION_KEY_DROP_OBSOLETE,    // The key is obsolete.
+  COMPACTION_KEY_DROP_RANGE_DEL,   // key was covered by a range tombstone.
+  COMPACTION_KEY_DROP_USER, // user compaction function has dropped the key.
+  COMPACTION_RANGE_DEL_DROP_OBSOLETE, // all keys in range were deleted.
   // Deletions obsoleted before bottom level due to file gap optimization.
   COMPACTION_OPTIMIZED_DEL_DROP_OBSOLETE,
   // If a compaction was cancelled in sfm to prevent ENOSPC
@@ -186,24 +186,24 @@ enum Tickers : uint32_t {
   // Record the number of calls to GetUpadtesSince. Useful to keep track of
   // transaction log iterator refreshes
   GET_UPDATES_SINCE_CALLS,
-  BLOCK_CACHE_COMPRESSED_MISS,  // miss in the compressed block cache
-  BLOCK_CACHE_COMPRESSED_HIT,   // hit in the compressed block cache
+  BLOCK_CACHE_COMPRESSED_MISS, // miss in the compressed block cache
+  BLOCK_CACHE_COMPRESSED_HIT,  // hit in the compressed block cache
   // Number of blocks added to compressed block cache
   BLOCK_CACHE_COMPRESSED_ADD,
   // Number of failures when adding blocks to compressed block cache
   BLOCK_CACHE_COMPRESSED_ADD_FAILURES,
-  WAL_FILE_SYNCED,  // Number of times WAL sync is done
-  WAL_FILE_BYTES,   // Number of bytes written to WAL
+  WAL_FILE_SYNCED, // Number of times WAL sync is done
+  WAL_FILE_BYTES,  // Number of bytes written to WAL
 
   // Writes can be processed by requesting thread or by the thread at the
   // head of the writers queue.
   WRITE_DONE_BY_SELF,
-  WRITE_DONE_BY_OTHER,  // Equivalent to writes done for others
-  WRITE_TIMEDOUT,       // Number of writes ending up with timed-out.
-  WRITE_WITH_WAL,       // Number of Write calls that request WAL
-  COMPACT_READ_BYTES,   // Bytes read during compaction
-  COMPACT_WRITE_BYTES,  // Bytes written during compaction
-  FLUSH_WRITE_BYTES,    // Bytes written during flush
+  WRITE_DONE_BY_OTHER, // Equivalent to writes done for others
+  WRITE_TIMEDOUT,      // Number of writes ending up with timed-out.
+  WRITE_WITH_WAL,      // Number of Write calls that request WAL
+  COMPACT_READ_BYTES,  // Bytes read during compaction
+  COMPACT_WRITE_BYTES, // Bytes written during compaction
+  FLUSH_WRITE_BYTES,   // Bytes written during flush
 
   // Number of table's properties loaded directly from file, without creating
   // table reader object.
@@ -224,13 +224,17 @@ enum Tickers : uint32_t {
   ROW_CACHE_HIT,
   ROW_CACHE_MISS,
 
+  // Univeral cache.
+  KV_CACHE_HIT,
+  KV_CACHE_MISS,
+
   // Read amplification statistics.
   // Read amplification can be calculated using this formula
   // (READ_AMP_TOTAL_READ_BYTES / READ_AMP_ESTIMATE_USEFUL_BYTES)
   //
   // REQUIRES: ReadOptions::read_amp_bytes_per_bit to be enabled
-  READ_AMP_ESTIMATE_USEFUL_BYTES,  // Estimate of total bytes actually used.
-  READ_AMP_TOTAL_READ_BYTES,       // Total size of loaded data blocks.
+  READ_AMP_ESTIMATE_USEFUL_BYTES, // Estimate of total bytes actually used.
+  READ_AMP_TOTAL_READ_BYTES,      // Total size of loaded data blocks.
 
   // Number of refill intervals where rate limiter's bytes are fully consumed.
   NUMBER_RATE_LIMITER_DRAINS,
@@ -330,8 +334,8 @@ enum Tickers : uint32_t {
   // NUMBER_MULTIGET_KEYS_READ gives the number requested by caller
   NUMBER_MULTIGET_KEYS_FOUND,
 
-  NO_ITERATOR_CREATED,  // number of iterators created
-  NO_ITERATOR_DELETED,  // number of iterators deleted
+  NO_ITERATOR_CREATED, // number of iterators created
+  NO_ITERATOR_DELETED, // number of iterators deleted
 
   BLOCK_CACHE_COMPRESSION_DICT_MISS,
   BLOCK_CACHE_COMPRESSION_DICT_HIT,

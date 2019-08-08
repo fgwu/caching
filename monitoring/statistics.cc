@@ -117,6 +117,8 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {FILTER_OPERATION_TOTAL_TIME, "rocksdb.filter.operation.time.nanos"},
     {ROW_CACHE_HIT, "rocksdb.row.cache.hit"},
     {ROW_CACHE_MISS, "rocksdb.row.cache.miss"},
+    {KV_CACHE_HIT, "rocksdb.uni.cache.kv.hit"},
+    {KV_CACHE_MISS, "rocksdb.uni.cache.kv.miss"},
     {READ_AMP_ESTIMATE_USEFUL_BYTES, "rocksdb.read.amp.estimate.useful.bytes"},
     {READ_AMP_TOTAL_READ_BYTES, "rocksdb.read.amp.total.read.bytes"},
     {NUMBER_RATE_LIMITER_DRAINS, "rocksdb.number.rate_limiter.drains"},

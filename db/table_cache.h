@@ -189,6 +189,7 @@ class TableCache {
   const EnvOptions& env_options_;
   Cache* const cache_;
   std::string row_cache_id_;
+  std::string uni_cache_id_;
   bool immortal_tables_;
   BlockCacheTracer* const block_cache_tracer_;
 };
