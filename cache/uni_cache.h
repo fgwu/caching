@@ -5,6 +5,14 @@
 namespace rocksdb {
 
 /* Universal Cache */
+
+enum UniCacheEntryType { kKV = 0, kKP = 1, kKVR = 2, kKPR = 3 };
+
+struct UniCacheKey {
+  Slice key;
+  UniCacheEntryType type;
+};
+
 class UniCache : public Cache {
 public:
   UniCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
@@ -18,16 +26,34 @@ public:
                         Handle **handle = nullptr,
                         Priority priority = Priority::LOW) override;
 
+  virtual Status Insert(UniCacheEntryType type, const Slice &uni_key,
+                        void *value, size_t charge,
+                        void (*deleter)(const Slice &key, void *value),
+                        Handle **handle = nullptr,
+                        Priority priority = Priority::LOW);
+
   virtual Handle *Lookup(const Slice &key,
                          Statistics *stats = nullptr) override;
 
+  virtual Handle *Lookup(UniCacheEntryType type, const Slice &key,
+                         Statistics *stats = nullptr);
+
   virtual bool Ref(Handle *handle) override;
+
+  virtual bool Ref(UniCacheEntryType type, Handle *handle);
 
   virtual bool Release(Handle *handle, bool force_erase = false) override;
 
+  virtual bool Release(UniCacheEntryType type, Handle *handle,
+                       bool force_erase = false);
+
   virtual void *Value(Handle *handle) override;
 
+  virtual void *Value(UniCacheEntryType type, Handle *handle);
+
   virtual void Erase(const Slice &key) override;
+
+  virtual void Erase(UniCacheEntryType type, const Slice &key);
 
   virtual uint64_t NewId() override;
 
@@ -53,7 +79,8 @@ public:
   virtual void EraseUnRefEntries() override;
 
 private:
-  std::shared_ptr<Cache> cache_;
+  std::shared_ptr<Cache> kv_cache_;
+  std::shared_ptr<Cache> kp_cache_;
 };
 
 } // namespace rocksdb
