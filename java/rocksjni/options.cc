@@ -1706,6 +1706,9 @@ jboolean Java_org_rocksdb_Options_allow2pc(
   return static_cast<jboolean>(opt->allow_2pc);
 }
 
+// TODO(fwu): duplicate all RowCache related JNI functions
+// as UniCache. simply `ag RowCache`, will return all the places
+// to be modified.
 /*
  * Class:     org_rocksdb_Options
  * Method:    setRowCache

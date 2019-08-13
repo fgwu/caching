@@ -4517,6 +4517,7 @@ class TickerTypeJni {
         return 0x56;
       case rocksdb::Tickers::FILTER_OPERATION_TOTAL_TIME:
         return 0x57;
+        // TODO(fwu): add UNI_CACHE stats
       case rocksdb::Tickers::ROW_CACHE_HIT:
         return 0x58;
       case rocksdb::Tickers::ROW_CACHE_MISS:
