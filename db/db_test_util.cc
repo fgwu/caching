@@ -514,6 +514,10 @@ Options DBTestBase::GetOptions(
       options.row_cache = NewLRUCache(1024 * 1024);
       break;
     }
+    case kUniCache: {
+      options.row_cache = NewUniCache(1024 * 1024);
+      break;
+    }
     case kRecycleLogFiles: {
       options.recycle_log_file_num = 2;
       break;

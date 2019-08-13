@@ -66,6 +66,7 @@ class MemoryTest : public testing::Test {
 
       // Cache from DBOptions
       cache_set->insert(db->GetDBOptions().row_cache.get());
+      cache_set->insert(db->GetDBOptions().uni_cache.get());
 
       // Cache from table factories
       std::unordered_map<std::string, const ImmutableCFOptions*> iopts_map;
