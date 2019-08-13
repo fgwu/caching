@@ -11,7 +11,7 @@
 
 #include "cache/clock_cache.h"
 #include "cache/lru_cache.h"
-#include "cache/uni_cache.h"
+#include "rocksdb/uni_cache.h"
 #include "test_util/testharness.h"
 #include "util/coding.h"
 #include "util/string_util.h"

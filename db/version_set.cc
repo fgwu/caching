@@ -9,16 +9,6 @@
 
 #include "db/version_set.h"
 
-#include <cinttypes>
-#include <stdio.h>
-#include <algorithm>
-#include <array>
-#include <list>
-#include <map>
-#include <set>
-#include <string>
-#include <unordered_map>
-#include <vector>
 #include "compaction/compaction.h"
 #include "db/internal_stats.h"
 #include "db/log_reader.h"
@@ -34,6 +24,7 @@
 #include "monitoring/perf_context_imp.h"
 #include "rocksdb/env.h"
 #include "rocksdb/merge_operator.h"
+#include "rocksdb/uni_cache.h"
 #include "rocksdb/write_buffer_manager.h"
 #include "table/format.h"
 #include "table/get_context.h"
@@ -50,10 +41,25 @@
 #include "util/stop_watch.h"
 #include "util/string_util.h"
 #include "util/user_comparator_wrapper.h"
+#include <algorithm>
+#include <array>
+#include <cinttypes>
+#include <list>
+#include <map>
+#include <set>
+#include <stdio.h>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace rocksdb {
 
 namespace {
+
+static void DeleteKVEntry(const Slice & /*key*/, void *value) {
+  std::string *typed_value = reinterpret_cast<std::string *>(value);
+  delete typed_value;
+}
 
 // Find File in LevelFilesBrief data structure
 // Within an index range defined by left and right
@@ -1629,6 +1635,50 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     pinned_iters_mgr.StartPinning();
   }
 
+  std::string *kv_cache_entry = nullptr;
+  auto uni_cache = cfd_->ioptions()->uni_cache;
+  IterKey kv_cache_key;
+  std::string kv_cache_entry_buffer;
+  if (!merge_operator_ && uni_cache && !get_context.NeedToReadSequence()) {
+    // check UniCache
+    // construct uni_cache_lookup_key
+    //    auto user_key = ExtractUserKey(k);
+    kv_cache_key.TrimAppend(kv_cache_key.Size(), user_key.data(),
+                            user_key.size());
+    if (auto kv_handle = uni_cache->Lookup(kKV, kv_cache_key.GetUserKey())) {
+      // Cleanable routine to release the cache entry
+      Cleanable value_pinner;
+      auto release_cache_entry_func = [](void *cache_to_clean,
+                                         void *cache_handle) {
+        ((Cache *)cache_to_clean)->Release((Cache::Handle *)cache_handle);
+      };
+      auto found_kv_cache_entry =
+          static_cast<const std::string *>(uni_cache->Value(kv_handle));
+      // If it comes here value is located on the cache.
+      // found_row_cache_entry points to the value on cache,
+      // and value_pinner has cleanup procedure for the cached entry.
+      // After replayGetContextLog() returns, get_context.pinnable_slice_
+      // will point to cache entry buffer (or a copy based on that) and
+      // cleanup routine under value_pinner will be delegated to
+      // get_context.pinnable_slice_. Cache entry is released when
+      // get_context.pinnable_slice_ is reset.
+      value_pinner.RegisterCleanup(release_cache_entry_func, uni_cache.get(),
+                                   kv_handle);
+      replayGetContextLog(*found_kv_cache_entry, user_key, &get_context,
+                          &value_pinner);
+      RecordTick(db_statistics_, KV_CACHE_HIT);
+
+      if (db_statistics_ != nullptr) {
+        get_context.ReportCounters();
+      }
+      return;
+    } else {
+      // Not found, setting up the replay log.
+      RecordTick(db_statistics_, KV_CACHE_MISS);
+      kv_cache_entry = &kv_cache_entry_buffer;
+    }
+  }
+
   FilePicker fp(
       storage_info_.files_, user_key, ikey, &storage_info_.level_files_brief_,
       storage_info_.num_non_empty_levels_, &storage_info_.file_indexer_,
@@ -1645,6 +1695,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       sample_file_read_inc(f->file_metadata);
     }
 
+    get_context.SetKVLog(kv_cache_entry); // nullptr if no cache
     bool timer_enabled =
         GetPerfLevel() >= PerfLevel::kEnableTimeExceptForMutex &&
         get_perf_context()->per_level_perf_context_enabled;
@@ -1661,6 +1712,8 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       PERF_COUNTER_BY_LEVEL_ADD(get_from_table_nanos, timer.ElapsedNanos(),
                                 fp.GetCurrentLevel());
     }
+    get_context.SetKVLog(nullptr);
+
     if (!status->ok()) {
       return;
     }
@@ -1685,6 +1738,14 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
           RecordTick(db_statistics_, GET_HIT_L1);
         } else if (fp.GetHitFileLevel() >= 2) {
           RecordTick(db_statistics_, GET_HIT_L2_AND_UP);
+        }
+        // insert to KV cache if found
+        if (kv_cache_entry && !kv_cache_entry->empty()) {
+          size_t charge = kv_cache_key.Size() + kv_cache_entry->size() +
+                          sizeof(std::string);
+          void *row_ptr = new std::string(std::move(*kv_cache_entry));
+          uni_cache->Insert(kKV, kv_cache_key.GetUserKey(), row_ptr, charge,
+                            &DeleteKVEntry);
         }
         PERF_COUNTER_BY_LEVEL_ADD(user_key_return_count, 1, fp.GetHitFileLevel());
         return;

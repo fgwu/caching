@@ -11,6 +11,7 @@
 #include "db/dbformat.h"
 #include "options/db_options.h"
 #include "rocksdb/options.h"
+#include "rocksdb/uni_cache.h"
 #include "util/compression.h"
 
 namespace rocksdb {
@@ -114,7 +115,7 @@ struct ImmutableCFOptions {
   std::vector<std::shared_ptr<EventListener>> listeners;
 
   std::shared_ptr<Cache> row_cache;
-  std::shared_ptr<Cache> uni_cache;
+  std::shared_ptr<UniCache> uni_cache;
 
   uint32_t max_subcompactions;
 

@@ -1,7 +1,7 @@
+#include "rocksdb/uni_cache.h"
 #include "rocksdb/cache.h"
 
 #include "cache/lru_cache.h"
-#include "cache/uni_cache.h"
 
 namespace rocksdb {
 
@@ -166,7 +166,7 @@ void UniCache::EraseUnRefEntries() {
   kp_cache_->EraseUnRefEntries();
 }
 
-std::shared_ptr<Cache>
+std::shared_ptr<UniCache>
 NewUniCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
             double /*high_pri_pool_ratio*/,
             std::shared_ptr<MemoryAllocator> memory_allocator,

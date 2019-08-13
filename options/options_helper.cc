@@ -20,6 +20,7 @@
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/table.h"
+#include "rocksdb/uni_cache.h"
 #include "rocksdb/utilities/object_registry.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "table/plain/plain_table_factory.h"
@@ -1407,7 +1408,7 @@ std::unordered_map<std::string, OptionTypeInfo>
         /*
          // not yet supported
           std::shared_ptr<Cache> row_cache;
-          std::shared_ptr<Cache> uni_cache;
+          std::shared_ptr<UniCache> uni_cache;
           std::shared_ptr<DeleteScheduler> delete_scheduler;
           std::shared_ptr<Logger> info_log;
           std::shared_ptr<RateLimiter> rate_limiter;

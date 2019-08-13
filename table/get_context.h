@@ -121,6 +121,9 @@ class GetContext {
   // another GetContext with replayGetContextLog.
   void SetReplayLog(std::string* replay_log) { replay_log_ = replay_log; }
 
+  // similar to SetReplayLog. It is used in the KV cache in UniCache
+  void SetKVLog(std::string *kv_log) { kv_log_ = kv_log; }
+
   // Do we need to fetch the SequenceNumber for this key?
   bool NeedToReadSequence() const { return (seq_ != nullptr); }
 
@@ -153,6 +156,7 @@ class GetContext {
   // write to the key or kMaxSequenceNumber if unknown
   SequenceNumber* seq_;
   std::string* replay_log_;
+  std::string *kv_log_;
   // Used to temporarily pin blocks when state_ == GetContext::kMerge
   PinnedIteratorsManager* pinned_iters_mgr_;
   ReadCallback* callback_;

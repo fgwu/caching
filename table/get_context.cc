@@ -38,30 +38,22 @@ void appendToReplayLog(std::string* replay_log, ValueType type, Slice value) {
 
 }  // namespace
 
-GetContext::GetContext(const Comparator* ucmp,
-                       const MergeOperator* merge_operator, Logger* logger,
-                       Statistics* statistics, GetState init_state,
-                       const Slice& user_key, PinnableSlice* pinnable_val,
-                       bool* value_found, MergeContext* merge_context,
-                       SequenceNumber* _max_covering_tombstone_seq, Env* env,
-                       SequenceNumber* seq,
-                       PinnedIteratorsManager* _pinned_iters_mgr,
-                       ReadCallback* callback, bool* is_blob_index)
-    : ucmp_(ucmp),
-      merge_operator_(merge_operator),
-      logger_(logger),
-      statistics_(statistics),
-      state_(init_state),
-      user_key_(user_key),
-      pinnable_val_(pinnable_val),
-      value_found_(value_found),
+GetContext::GetContext(const Comparator *ucmp,
+                       const MergeOperator *merge_operator, Logger *logger,
+                       Statistics *statistics, GetState init_state,
+                       const Slice &user_key, PinnableSlice *pinnable_val,
+                       bool *value_found, MergeContext *merge_context,
+                       SequenceNumber *_max_covering_tombstone_seq, Env *env,
+                       SequenceNumber *seq,
+                       PinnedIteratorsManager *_pinned_iters_mgr,
+                       ReadCallback *callback, bool *is_blob_index)
+    : ucmp_(ucmp), merge_operator_(merge_operator), logger_(logger),
+      statistics_(statistics), state_(init_state), user_key_(user_key),
+      pinnable_val_(pinnable_val), value_found_(value_found),
       merge_context_(merge_context),
-      max_covering_tombstone_seq_(_max_covering_tombstone_seq),
-      env_(env),
-      seq_(seq),
-      replay_log_(nullptr),
-      pinned_iters_mgr_(_pinned_iters_mgr),
-      callback_(callback),
+      max_covering_tombstone_seq_(_max_covering_tombstone_seq), env_(env),
+      seq_(seq), replay_log_(nullptr), kv_log_(nullptr),
+      pinned_iters_mgr_(_pinned_iters_mgr), callback_(callback),
       is_blob_index_(is_blob_index) {
   if (seq_) {
     *seq_ = kMaxSequenceNumber;
@@ -84,7 +76,7 @@ void GetContext::MarkKeyMayExist() {
 void GetContext::SaveValue(const Slice& value, SequenceNumber /*seq*/) {
   assert(state_ == kNotFound);
   appendToReplayLog(replay_log_, kTypeValue, value);
-
+  appendToReplayLog(kv_log_, kTypeValue, value);
   state_ = kFound;
   if (LIKELY(pinnable_val_ != nullptr)) {
     pinnable_val_->PinSelf(value);
@@ -190,6 +182,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
     }
 
     appendToReplayLog(replay_log_, parsed_key.type, value);
+    appendToReplayLog(kv_log_, parsed_key.type, value);
 
     if (seq_ != nullptr) {
       // Set the sequence number if it is uninitialized

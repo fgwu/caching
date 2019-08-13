@@ -20,6 +20,7 @@
 #include "rocksdb/comparator.h"
 #include "rocksdb/env.h"
 #include "rocksdb/listener.h"
+#include "rocksdb/uni_cache.h"
 #include "rocksdb/universal_compaction.h"
 #include "rocksdb/version.h"
 #include "rocksdb/write_buffer_manager.h"
@@ -981,7 +982,7 @@ struct DBOptions {
   // and <key pointer range>
   // Default: nullptr (disabled)
   // Not supported in ROCKSDB_LITE mode!
-  std::shared_ptr<Cache> uni_cache = nullptr;
+  std::shared_ptr<UniCache> uni_cache = nullptr;
 
 #ifndef ROCKSDB_LITE
   // A filter object supplied to be invoked while processing write-ahead-logs

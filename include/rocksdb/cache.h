@@ -33,6 +33,7 @@
 namespace rocksdb {
 
 class Cache;
+class UniCache;
 
 extern const bool kDefaultToAdaptiveMutex;
 
@@ -114,7 +115,7 @@ extern std::shared_ptr<Cache> NewClockCache(size_t capacity,
                                             int num_shard_bits = -1,
                                             bool strict_capacity_limit = false);
 
-extern std::shared_ptr<Cache>
+extern std::shared_ptr<UniCache>
 NewUniCache(size_t capacity, int num_shard_bits = -1,
             bool strict_capacity_limit = false,
             double high_pri_pool_ratio = 0.0,
