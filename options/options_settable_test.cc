@@ -180,7 +180,7 @@ TEST_F(OptionsSettableTest, BlockBasedTableOptionsAllFieldsSettable) {
 // kDBOptionsBlacklist, and maybe add customized verification for it.
 TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
   const OffsetGap kDBOptionsBlacklist = {
-      {offsetof(struct DBOptions, env), sizeof(Env*)},
+      {offsetof(struct DBOptions, env), sizeof(Env *)},
       {offsetof(struct DBOptions, rate_limiter),
        sizeof(std::shared_ptr<RateLimiter>)},
       {offsetof(struct DBOptions, sst_file_manager),
@@ -196,7 +196,8 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
       {offsetof(struct DBOptions, listeners),
        sizeof(std::vector<std::shared_ptr<EventListener>>)},
       {offsetof(struct DBOptions, row_cache), sizeof(std::shared_ptr<Cache>)},
-      {offsetof(struct DBOptions, wal_filter), sizeof(const WalFilter*)},
+      {offsetof(struct DBOptions, uni_cache), sizeof(std::shared_ptr<Cache>)},
+      {offsetof(struct DBOptions, wal_filter), sizeof(const WalFilter *)},
   };
 
   char* options_ptr = new char[sizeof(DBOptions)];
