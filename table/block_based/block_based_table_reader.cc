@@ -2915,6 +2915,7 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
           if (!get_context->SaveValue(
                   parsed_key, biter.value(), &matched,
                   biter.IsValuePinned() ? &biter : nullptr)) {
+            get_context->SaveBlockHandle(iiter->value());
             done = true;
             break;
           }

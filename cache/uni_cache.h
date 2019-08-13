@@ -13,6 +13,14 @@ struct UniCacheKey {
   UniCacheEntryType type;
 };
 
+struct FdAndBlockHandle {
+  // copiable data structure. We will drop the TableReader pointer inside it
+  // as when the cached BlockPointer is found again, the TableReader pointer
+  // may no longer be valid.
+  FileDescriptor fd;
+  BlockHandler block_handle;
+};
+
 class UniCache : public Cache {
 public:
   UniCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,

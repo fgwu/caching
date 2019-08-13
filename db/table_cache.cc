@@ -313,13 +313,17 @@ Status TableCache::Get(const ReadOptions& options,
                        int level) {
   auto& fd = file_meta.fd;
   std::string *kv_cache_entry = nullptr;
+  std::string *kp_cache_entry = nullptr;
   bool done = false;
 #ifndef ROCKSDB_LITE
   IterKey row_cache_key;
   std::string kv_cache_entry_buffer;
+  BlockPointer kp_cache_entry_buffer;
 
   // Check row cache if enabled. Since row cache does not currently store
   // sequence numbers, we cannot use it if we need to fetch the sequence.
+  //
+  // fwu Aug 2019:
   // if uni_cache has return result, we skip row_cache. As uni_cache can
   // well replace row_cache
   if ((ioptions_.uni_cache || ioptions_.row_cache) &&
@@ -404,10 +408,65 @@ Status TableCache::Get(const ReadOptions& options,
       }
     }
   }
+
+  // checking the KP cache if KV cache does not found anything
+  if (!done && s.ok() && ioptions_.uni_cache &&
+      !get_context->NeedToReadSequence()) {
+    uint64_t fd_number = fd.GetNumber();
+    auto user_key = ExtractUserKey(k);
+    // We use the user key as cache key instead of the internal key,
+    // otherwise the whole cache would be invalidated every time the
+    // sequence key increases. However, to support caching snapshot
+    // reads, we append the sequence number (incremented by 1 to
+    // distinguish from 0) only in this case.
+    uint64_t seq_no =
+        options.snapshot == nullptr ? 0 : 1 + GetInternalKeySeqno(k);
+
+    // Compute row cache key.
+    row_cache_key.TrimAppend(row_cache_key.Size(), row_cache_id_.data(),
+                             row_cache_id_.size());
+    AppendVarint64(&row_cache_key, fd_number);
+    AppendVarint64(&row_cache_key, seq_no);
+    row_cache_key.TrimAppend(row_cache_key.Size(), user_key.data(),
+                             user_key.size());
+
+    if (ioptions_.uni_cache) {
+      if (auto row_handle =
+              ioptions_.uni_cache->Lookup(row_cache_key.GetUserKey())) {
+        // Cleanable routine to release the cache entry
+        Cleanable value_pinner;
+        auto release_cache_entry_func = [](void *cache_to_clean,
+                                           void *cache_handle) {
+          ((Cache *)cache_to_clean)->Release((Cache::Handle *)cache_handle);
+        };
+        auto found_kv_cache_entry = static_cast<const std::string *>(
+            ioptions_.uni_cache->Value(row_handle));
+        // If it comes here value is located on the cache.
+        // found_kv_cache_entry points to the value on cache,
+        // and value_pinner has cleanup procedure for the cached entry.
+        // After replayGetContextLog() returns, get_context.pinnable_slice_
+        // will point to cache entry buffer (or a copy based on that) and
+        // cleanup routine under value_pinner will be delegated to
+        // get_context.pinnable_slice_. Cache entry is released when
+        // get_context.pinnable_slice_ is reset.
+        value_pinner.RegisterCleanup(release_cache_entry_func,
+                                     ioptions_.uni_cache.get(), row_handle);
+        replayGetContextLog(*found_kv_cache_entry, user_key, get_context,
+                            &value_pinner);
+        RecordTick(ioptions_.statistics, KV_CACHE_HIT);
+        done = true;
+      } else {
+        // Not found, setting up the replay log.
+        RecordTick(ioptions_.statistics, KV_CACHE_MISS);
+        kv_cache_entry = &kv_cache_entry_buffer;
+      }
+    }
+  }
 #endif  // ROCKSDB_LITE
   Status s;
   TableReader* t = fd.table_reader;
   Cache::Handle* handle = nullptr;
+  BlockPointer pointer;
   if (!done && s.ok()) {
     if (t == nullptr) {
       s = FindTable(
@@ -432,7 +491,18 @@ Status TableCache::Get(const ReadOptions& options,
     }
     if (s.ok()) {
       get_context->SetReplayLog(kv_cache_entry); // nullptr if no cache.
+      // nullptr if no cache
+      if (kp_cache_entry) {
+        // saving the file and block where the key resides.
+        // this will cached as KP cache.
+        get_context->SetBlockPointer(&(kp_cache_entry->block_handle));
+        kp_cache_entry->fd = fd;
+        // the table_reader pointer may be already invalid next time.
+        // so we set it to nullptr.
+        kp_cache_entry->fd.table_reader = nullptr;
+      }
       s = t->Get(options, k, get_context, prefix_extractor, skip_filters);
+      get_context->SetBlockPointer(nullptr);
       get_context->SetReplayLog(nullptr);
     } else if (options.read_tier == kBlockCacheTier && s.IsIncomplete()) {
       // Couldn't find Table in cache but treat as kFound if no_io set
@@ -444,6 +514,14 @@ Status TableCache::Get(const ReadOptions& options,
 
 #ifndef ROCKSDB_LITE
   // Put the replay log in row cache only if something was found.
+  if (!done && s.ok() && kp_cache_entry &&
+      !kp_cache_entry->block_handle.IsNull()) {
+    size_t charge = row_cache_key.Size() + sizeof(FdAndBlockHandle);
+    void *kp_ptr = new FdAndBlockHandle(std::move(*kp_cache_entry));
+    ioptions_.uni_cache->Insert(kKP, row_cache_key.GetUserKey(), kp_ptr, charge,
+                                &DeleteEntry<FdAndBlockHandle>);
+  }
+
   if (!done && s.ok() && kv_cache_entry && !kv_cache_entry->empty()) {
     size_t charge =
         row_cache_key.Size() + kv_cache_entry->size() + sizeof(std::string);

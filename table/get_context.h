@@ -108,6 +108,12 @@ class GetContext {
   // know that the operation is a Put.
   void SaveValue(const Slice& value, SequenceNumber seq);
 
+  void SaveBlockHandle(BlockHandle block_handle) {
+    if (block_handle_to_save_) {
+      *block_handle_to_save_ = block_handle;
+    }
+  }
+
   GetState State() const { return state_; }
 
   SequenceNumber* max_covering_tombstone_seq() {
@@ -120,6 +126,11 @@ class GetContext {
   // logged into the string. The operations can then be replayed on
   // another GetContext with replayGetContextLog.
   void SetReplayLog(std::string* replay_log) { replay_log_ = replay_log; }
+
+  // remenber the block handle of the value got.
+  void SetBlockPointer(BlockHandle *block_handle) {
+    block_handle_to_save_ = block_handle;
+  }
 
   // Do we need to fetch the SequenceNumber for this key?
   bool NeedToReadSequence() const { return (seq_ != nullptr); }
@@ -153,6 +164,7 @@ class GetContext {
   // write to the key or kMaxSequenceNumber if unknown
   SequenceNumber* seq_;
   std::string* replay_log_;
+  FdAndBlockHandle *block_handle_;
   // Used to temporarily pin blocks when state_ == GetContext::kMerge
   PinnedIteratorsManager* pinned_iters_mgr_;
   ReadCallback* callback_;
