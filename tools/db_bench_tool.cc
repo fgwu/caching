@@ -3691,8 +3691,7 @@ class Benchmark {
             FLAGS_bloom_bits, FLAGS_use_block_based_filter));
       }
     }
-    // if uni_cache is in use, row_cache will be disabled.
-    if (!FLAGS_uni_cache_size && FLAGS_row_cache_size) {
+    if (FLAGS_row_cache_size) {
       if (FLAGS_cache_numshardbits >= 1) {
         options.row_cache =
             NewLRUCache(FLAGS_row_cache_size, FLAGS_cache_numshardbits);
@@ -3703,9 +3702,9 @@ class Benchmark {
     if (FLAGS_uni_cache_size) {
       if (FLAGS_cache_numshardbits >= 1) {
         options.uni_cache =
-            NewLRUCache(FLAGS_uni_cache_size, FLAGS_cache_numshardbits);
+            NewUniCache(FLAGS_uni_cache_size, FLAGS_cache_numshardbits);
       } else {
-        options.uni_cache = NewLRUCache(FLAGS_uni_cache_size);
+        options.uni_cache = NewUniCache(FLAGS_uni_cache_size);
       }
     }
     if (FLAGS_enable_io_prio) {

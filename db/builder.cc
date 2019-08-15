@@ -64,6 +64,29 @@ TableBuilder* NewTableBuilder(
       column_family_id, file);
 }
 
+static void DeleteKVEntry(const Slice & /*key*/, void *value) {
+  std::string *typed_value = reinterpret_cast<std::string *>(value);
+  delete typed_value;
+}
+
+void appendToReplayLog(std::string *replay_log, ValueType type, Slice value) {
+#ifndef ROCKSDB_LITE
+  if (replay_log) {
+    if (replay_log->empty()) {
+      // Optimization: in the common case of only one operation in the
+      // log, we allocate the exact amount of space needed.
+      replay_log->reserve(1 + VarintLength(value.size()) + value.size());
+    }
+    replay_log->push_back(type);
+    PutLengthPrefixedSlice(replay_log, value);
+  }
+#else
+  (void)replay_log;
+  (void)type;
+  (void)value;
+#endif // ROCKSDB_LITE
+}
+
 Status BuildTable(
     const std::string& dbname, Env* env, const ImmutableCFOptions& ioptions,
     const MutableCFOptions& mutable_cf_options, const EnvOptions& env_options,
@@ -153,11 +176,47 @@ Status BuildTable(
         ShouldReportDetailedTime(env, ioptions.statistics),
         true /* internal key corruption is not ok */, range_del_agg.get());
     c_iter.SeekToFirst();
+    Slice last_user_key;
     for (; c_iter.Valid(); c_iter.Next()) {
       const Slice& key = c_iter.key();
       const Slice& value = c_iter.value();
       builder->Add(key, value);
       meta->UpdateBoundaries(key, c_iter.ikey().sequence);
+
+      // populate new KV pairs into UniCache
+      // TODO(fwu): distinguish KV and KP. Now all populated as KV.
+      //    Slice user_key = c_iter.ikey().user_key;
+      const ParsedInternalKey &ikey = c_iter.ikey();
+      if (ioptions.uni_cache && ikey.user_key != last_user_key) {
+        // only handles the newest user_key
+        // if this key == last user key, discard. becuase cache only store the
+        // latest one.
+        IterKey kv_cache_key;
+        kv_cache_key.TrimAppend(kv_cache_key.Size(), ikey.user_key.data(),
+                                ikey.user_key.size());
+        switch (ikey.type) {
+        case kTypeDeletion:
+          ioptions.uni_cache->Erase(kv_cache_key.GetUserKey());
+          break;
+        case kTypeValue: {
+          // construct value
+          std::string kv_cache_entry;
+          appendToReplayLog(&kv_cache_entry, ikey.type, value);
+          size_t charge =
+              kv_cache_key.Size() + kv_cache_entry.size() + sizeof(std::string);
+          void *row_ptr = new std::string(std::move(kv_cache_entry));
+          ioptions.uni_cache->Insert(kKV, kv_cache_key.GetUserKey(), row_ptr,
+                                     charge,
+                                     &DeleteKVEntry); // update if already exist
+        } break;
+        default:
+          /* do nothing. KV cache does not support them */
+          assert(0); // not implemented.
+          break;
+        }
+
+        last_user_key = ikey.user_key;
+      }
 
       // TODO(noetzli): Update stats after flush, too.
       if (io_priority == Env::IO_HIGH &&

@@ -5983,7 +5983,6 @@ TEST_F(DBTest, RowCache) {
   Options options = CurrentOptions();
   options.statistics = rocksdb::CreateDBStatistics();
   options.row_cache = NewLRUCache(8192);
-  options.uni_cache = nullptr; // uni_cache will disable row_cache. Set it null.
   DestroyAndReopen(options);
 
   ASSERT_OK(Put("foo", "bar"));
@@ -6011,10 +6010,27 @@ TEST_F(DBTest, UniCache) {
   ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
   ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
   ASSERT_EQ(Get("foo"), "bar");
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
-  ASSERT_EQ(Get("foo"), "bar");
   ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(Get("foo"), "bar");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+
+  // update <foo, bar> to <foo, baz>
+  ASSERT_OK(Put("foo", "baz"));
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(Get("foo"), "baz");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_OK(Flush());
+  ASSERT_EQ(Get("foo"), "baz");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+
+  // looking up for non-existing key
+  ASSERT_EQ(Get("quz"), "NOT_FOUND");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 3);
   ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
 }
 
