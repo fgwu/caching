@@ -1697,10 +1697,11 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       Cleanable value_pinner;
       auto release_cache_entry_func = [](void *cache_to_clean,
                                          void *cache_handle) {
-        ((Cache *)cache_to_clean)->Release((Cache::Handle *)cache_handle);
+        ((UniCache *)cache_to_clean)
+            ->Release(kKV, (Cache::Handle *)cache_handle);
       };
       auto found_kv_cache_entry =
-          static_cast<const std::string *>(uni_cache->Value(kv_handle));
+          static_cast<const std::string *>(uni_cache->Value(kKV, kv_handle));
       // If it comes here value is located on the cache.
       // found_row_cache_entry points to the value on cache,
       // and value_pinner has cleanup procedure for the cached entry.
@@ -1730,7 +1731,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       // tested valid by (kv_cache_entry_buffer.block_handle.IsNull() == true)
       if (auto kp_handle = uni_cache->Lookup(kKP, uni_cache_key.GetUserKey())) {
         kp_cache_entry = static_cast<FilePointerAndBlockHandle *>(
-            uni_cache->Value(kp_handle));
+            uni_cache->Value(kKP, kp_handle));
         kp_cache_entry_found = true;
         RecordTick(db_statistics_, KP_CACHE_HIT);
       } else {

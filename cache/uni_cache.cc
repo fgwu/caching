@@ -20,16 +20,10 @@ UniCache::UniCache(size_t capacity, int num_shard_bits,
 
 UniCache::~UniCache() {}
 
-Status UniCache::Insert(const Slice &key, void *value, size_t charge,
-                        void (*deleter)(const Slice &key, void *value),
-                        Cache::Handle **handle, Priority priority) {
-  return kv_cache_->Insert(key, value, charge, deleter, handle, priority);
-}
-
 Status UniCache::Insert(UniCacheEntryType type, const Slice &key, void *value,
                         size_t charge,
                         void (*deleter)(const Slice &key, void *value),
-                        Cache::Handle **handle, Priority priority) {
+                        Cache::Handle **handle, Cache::Priority priority) {
   switch (type) {
   case kKV:
     return kv_cache_->Insert(key, value, charge, deleter, handle, priority);
@@ -38,10 +32,6 @@ Status UniCache::Insert(UniCacheEntryType type, const Slice &key, void *value,
   default:
     assert(0);
   }
-}
-
-Cache::Handle *UniCache::Lookup(const Slice &key, Statistics *stats) {
-  return kv_cache_->Lookup(key, stats);
 }
 
 Cache::Handle *UniCache::Lookup(UniCacheEntryType type, const Slice &key,
@@ -56,8 +46,6 @@ Cache::Handle *UniCache::Lookup(UniCacheEntryType type, const Slice &key,
   }
 }
 
-bool UniCache::Ref(Cache::Handle *handle) { return kv_cache_->Ref(handle); }
-
 bool UniCache::Ref(UniCacheEntryType type, Cache::Handle *handle) {
   switch (type) {
   case kKV:
@@ -67,10 +55,6 @@ bool UniCache::Ref(UniCacheEntryType type, Cache::Handle *handle) {
   default:
     assert(0);
   }
-}
-
-bool UniCache::Release(Cache::Handle *handle, bool force_erase) {
-  return kv_cache_->Release(handle, force_erase);
 }
 
 bool UniCache::Release(UniCacheEntryType type, Cache::Handle *handle,
@@ -85,10 +69,6 @@ bool UniCache::Release(UniCacheEntryType type, Cache::Handle *handle,
   }
 }
 
-void *UniCache::Value(Cache::Handle *handle) {
-  return kv_cache_->Value(handle);
-}
-
 void *UniCache::Value(UniCacheEntryType type, Cache::Handle *handle) {
   switch (type) {
   case kKV:
@@ -100,8 +80,6 @@ void *UniCache::Value(UniCacheEntryType type, Cache::Handle *handle) {
   }
 }
 
-void UniCache::Erase(const Slice &key) { return kv_cache_->Erase(key); }
-
 void UniCache::Erase(UniCacheEntryType type, const Slice &key) {
   switch (type) {
   case kKV:
@@ -112,8 +90,6 @@ void UniCache::Erase(UniCacheEntryType type, const Slice &key) {
     assert(0);
   }
 }
-
-uint64_t UniCache::NewId() { return kv_cache_->NewId(); }
 
 void UniCache::SetCapacity(size_t capacity) {
   size_t kv_cache_capacity = capacity * kKVCacheRatio;
@@ -188,6 +164,17 @@ size_t UniCache::GetUsage(UniCacheEntryType type) const {
 
 size_t UniCache::GetUsage(Cache::Handle *handle) const {
   return kv_cache_->GetUsage(handle) + kp_cache_->GetUsage(handle);
+}
+
+size_t UniCache::GetUsage(UniCacheEntryType type, Cache::Handle *handle) const {
+  switch (type) {
+  case kKV:
+    return kv_cache_->GetUsage(handle);
+  case kKP:
+    return kp_cache_->GetUsage(handle);
+  default:
+    assert(0);
+  }
 }
 
 size_t UniCache::GetPinnedUsage() const {

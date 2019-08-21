@@ -26,76 +26,60 @@ struct FilePointer {
 
 struct FilePointerAndBlockHandle;
 
-class UniCache : public Cache {
+class UniCache {
 public:
   UniCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
            std::shared_ptr<MemoryAllocator> memory_allocator = nullptr);
-  ~UniCache();
+  virtual ~UniCache();
 
-  virtual const char *Name() const override { return "UniCache"; }
-
-  virtual Status Insert(const Slice &key, void *value, size_t charge,
-                        void (*deleter)(const Slice &key, void *value),
-                        Handle **handle = nullptr,
-                        Priority priority = Priority::LOW) override;
+  virtual const char *Name() const { return "UniCache"; }
 
   virtual Status Insert(UniCacheEntryType type, const Slice &uni_key,
                         void *value, size_t charge,
                         void (*deleter)(const Slice &key, void *value),
-                        Handle **handle = nullptr,
-                        Priority priority = Priority::LOW);
+                        Cache::Handle **handle = nullptr,
+                        Cache::Priority priority = Cache::Priority::LOW);
 
-  virtual Handle *Lookup(const Slice &key,
-                         Statistics *stats = nullptr) override;
+  virtual Cache::Handle *Lookup(UniCacheEntryType type, const Slice &key,
+                                Statistics *stats = nullptr);
 
-  virtual Handle *Lookup(UniCacheEntryType type, const Slice &key,
-                         Statistics *stats = nullptr);
+  virtual bool Ref(UniCacheEntryType type, Cache::Handle *handle);
 
-  virtual bool Ref(Handle *handle) override;
-
-  virtual bool Ref(UniCacheEntryType type, Handle *handle);
-
-  virtual bool Release(Handle *handle, bool force_erase = false) override;
-
-  virtual bool Release(UniCacheEntryType type, Handle *handle,
+  virtual bool Release(UniCacheEntryType type, Cache::Handle *handle,
                        bool force_erase = false);
 
-  virtual void *Value(Handle *handle) override;
-
-  virtual void *Value(UniCacheEntryType type, Handle *handle);
-
-  virtual void Erase(const Slice &key) override;
+  virtual void *Value(UniCacheEntryType type, Cache::Handle *handle);
 
   virtual void Erase(UniCacheEntryType type, const Slice &key);
 
-  virtual uint64_t NewId() override;
-
-  virtual void SetCapacity(size_t capacity) override;
+  virtual void SetCapacity(size_t capacity);
 
   virtual void SetCapacity(UniCacheEntryType type, size_t capacity);
 
-  virtual void SetStrictCapacityLimit(bool strict_capacity_limit) override;
+  virtual void SetStrictCapacityLimit(bool strict_capacity_limit);
 
-  virtual bool HasStrictCapacityLimit() const override;
+  virtual bool HasStrictCapacityLimit() const;
 
-  virtual size_t GetCapacity() const override;
+  virtual size_t GetCapacity() const;
 
   virtual size_t GetCapacity(UniCacheEntryType type) const;
 
-  virtual size_t GetUsage() const override;
+  virtual size_t GetUsage() const;
 
   virtual size_t GetUsage(UniCacheEntryType type) const;
 
-  virtual size_t GetUsage(Handle *handle) const override;
+  virtual size_t GetUsage(Cache::Handle *handle) const;
 
-  virtual size_t GetPinnedUsage() const override;
+  virtual size_t GetUsage(UniCacheEntryType type, Cache::Handle *handle) const;
 
-  virtual void DisownData() override;
+  virtual size_t GetPinnedUsage() const;
+
+  virtual void DisownData();
 
   virtual void ApplyToAllCacheEntries(void (*callback)(void *, size_t),
-                                      bool thread_safe) override;
+                                      bool thread_safe);
 
-  virtual void EraseUnRefEntries() override;
+  virtual void EraseUnRefEntries();
 
 private:
   std::shared_ptr<Cache> kv_cache_;
