@@ -176,38 +176,44 @@ Status BuildTable(
         ShouldReportDetailedTime(env, ioptions.statistics),
         true /* internal key corruption is not ok */, range_del_agg.get());
     c_iter.SeekToFirst();
-    Slice last_user_key;
+    auto uni_cache = ioptions.uni_cache;
+    std::string last_user_key;
     for (; c_iter.Valid(); c_iter.Next()) {
       const Slice& key = c_iter.key();
       const Slice& value = c_iter.value();
       builder->Add(key, value);
       meta->UpdateBoundaries(key, c_iter.ikey().sequence);
 
-      // populate new KV pairs into UniCache
-      // TODO(fwu): distinguish KV and KP. Now all populated as KV.
+      // populate new KV pairs into UniCache: KV cache.
       //    Slice user_key = c_iter.ikey().user_key;
       const ParsedInternalKey &ikey = c_iter.ikey();
-      if (ioptions.uni_cache && ikey.user_key != last_user_key) {
+      if (uni_cache && ikey.user_key.ToString() != last_user_key) {
         // only handles the newest user_key
         // if this key == last user key, discard. becuase cache only store the
         // latest one.
-        IterKey kv_cache_key;
-        kv_cache_key.TrimAppend(kv_cache_key.Size(), ikey.user_key.data(),
-                                ikey.user_key.size());
+        IterKey uni_cache_key;
+        uni_cache_key.TrimAppend(uni_cache_key.Size(), ikey.user_key.data(),
+                                 ikey.user_key.size());
         switch (ikey.type) {
         case kTypeDeletion:
-          ioptions.uni_cache->Erase(kv_cache_key.GetUserKey());
+          uni_cache->Erase(kKV, uni_cache_key.GetUserKey());
+          uni_cache->Erase(kKP, uni_cache_key.GetUserKey());
           break;
         case kTypeValue: {
-          // construct value
-          std::string kv_cache_entry;
-          appendToReplayLog(&kv_cache_entry, ikey.type, value);
-          size_t charge =
-              kv_cache_key.Size() + kv_cache_entry.size() + sizeof(std::string);
-          void *row_ptr = new std::string(std::move(kv_cache_entry));
-          ioptions.uni_cache->Insert(kKV, kv_cache_key.GetUserKey(), row_ptr,
-                                     charge,
-                                     &DeleteKVEntry); // update if already exist
+          // only populate the key that is already cached.
+          // TODO(fwu): repopulate KP cache if found in KP cache
+          if (uni_cache->Lookup(kKV, uni_cache_key.GetUserKey())) {
+            // construct value
+            std::string kv_cache_entry;
+            appendToReplayLog(&kv_cache_entry, ikey.type, value);
+            size_t charge = uni_cache_key.Size() + kv_cache_entry.size() +
+                            sizeof(std::string);
+            void *row_ptr = new std::string(std::move(kv_cache_entry));
+            uni_cache->Insert(kKV, uni_cache_key.GetUserKey(), row_ptr, charge,
+                              &DeleteKVEntry); // update if already exist
+          }
+          // TODO(fwu): repopulate KP cache if found in KP cache
+          uni_cache->Erase(kKP, uni_cache_key.GetUserKey());
         } break;
         default:
           /* do nothing. KV cache does not support them */
@@ -215,7 +221,7 @@ Status BuildTable(
           break;
         }
 
-        last_user_key = ikey.user_key;
+        last_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
       }
 
       // TODO(noetzli): Update stats after flush, too.

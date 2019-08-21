@@ -108,6 +108,12 @@ class GetContext {
   // know that the operation is a Put.
   void SaveValue(const Slice& value, SequenceNumber seq);
 
+  void SaveBlockHandle(BlockHandle block_handle) {
+    if (block_handle_) {
+      *block_handle_ = block_handle;
+    }
+  }
+
   GetState State() const { return state_; }
 
   SequenceNumber* max_covering_tombstone_seq() {
@@ -123,6 +129,14 @@ class GetContext {
 
   // similar to SetReplayLog. It is used in the KV cache in UniCache
   void SetKVLog(std::string *kv_log) { kv_log_ = kv_log; }
+
+  // remenber the block handle of the value got.
+  void SetBlockHandle(BlockHandle *block_handle) {
+    block_handle_ = block_handle;
+  }
+
+  // remenber the block handle of the value got.
+  BlockHandle *GetSavedBlockHandle() { return block_handle_; }
 
   // Do we need to fetch the SequenceNumber for this key?
   bool NeedToReadSequence() const { return (seq_ != nullptr); }
@@ -157,6 +171,7 @@ class GetContext {
   SequenceNumber* seq_;
   std::string* replay_log_;
   std::string *kv_log_;
+  BlockHandle *block_handle_;
   // Used to temporarily pin blocks when state_ == GetContext::kMerge
   PinnedIteratorsManager* pinned_iters_mgr_;
   ReadCallback* callback_;

@@ -123,6 +123,28 @@ void UniCache::SetCapacity(size_t capacity) {
   kp_cache_->SetCapacity(kp_cache_capacity);
 }
 
+void UniCache::SetCapacity(UniCacheEntryType type, size_t capacity) {
+  size_t old_capacity = GetCapacity();
+  size_t kv_cache_capacity;
+  size_t kp_cache_capacity;
+
+  switch (type) {
+  case kKV:
+    kv_cache_capacity = capacity;
+    kp_cache_capacity = old_capacity - kv_cache_capacity;
+    break;
+  case kKP:
+    kp_cache_capacity = capacity;
+    kv_cache_capacity = old_capacity - kp_cache_capacity;
+    break;
+  default:
+    assert(0);
+  }
+
+  kv_cache_->SetCapacity(kv_cache_capacity);
+  kp_cache_->SetCapacity(kp_cache_capacity);
+}
+
 void UniCache::SetStrictCapacityLimit(bool strict_capacity_limit) {
   kv_cache_->SetStrictCapacityLimit(strict_capacity_limit);
   kp_cache_->SetStrictCapacityLimit(strict_capacity_limit);
@@ -138,8 +160,30 @@ size_t UniCache::GetCapacity() const {
   return kv_cache_->GetCapacity() + kp_cache_->GetCapacity();
 }
 
+size_t UniCache::GetCapacity(UniCacheEntryType type) const {
+  switch (type) {
+  case kKV:
+    return kv_cache_->GetCapacity();
+  case kKP:
+    return kp_cache_->GetCapacity();
+  default:
+    assert(0);
+  }
+}
+
 size_t UniCache::GetUsage() const {
   return kv_cache_->GetUsage() + kp_cache_->GetUsage();
+}
+
+size_t UniCache::GetUsage(UniCacheEntryType type) const {
+  switch (type) {
+  case kKV:
+    return kv_cache_->GetUsage();
+  case kKP:
+    return kp_cache_->GetUsage();
+  default:
+    assert(0);
+  }
 }
 
 size_t UniCache::GetUsage(Cache::Handle *handle) const {

@@ -5998,10 +5998,11 @@ TEST_F(DBTest, RowCache) {
   ASSERT_EQ(TestGetTickerCount(options, ROW_CACHE_MISS), 1);
 }
 
-TEST_F(DBTest, UniCache) {
+TEST_F(DBTest, UniCacheKV) {
   Options options = CurrentOptions();
   options.statistics = rocksdb::CreateDBStatistics();
   options.uni_cache = NewUniCache(8192);
+  options.uni_cache->SetCapacity(kKP, 0); // only test KV.
   DestroyAndReopen(options);
 
   ASSERT_OK(Put("foo", "bar"));
@@ -6010,28 +6011,167 @@ TEST_F(DBTest, UniCache) {
   ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
   ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
   ASSERT_EQ(Get("foo"), "bar");
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 1);
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
   ASSERT_EQ(Get("foo"), "bar");
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
 
   // update <foo, bar> to <foo, baz>
   ASSERT_OK(Put("foo", "baz"));
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
   ASSERT_EQ(Get("foo"), "baz");
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
   ASSERT_OK(Flush());
   ASSERT_EQ(Get("foo"), "baz");
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 3);
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
 
   // looking up for non-existing key
   ASSERT_EQ(Get("quz"), "NOT_FOUND");
-  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 2);
+}
+
+TEST_F(DBTest, UniCacheKVKP) {
+  Options options = CurrentOptions();
+  options.statistics = rocksdb::CreateDBStatistics();
+  options.uni_cache = NewUniCache(8192);
+  options.uni_cache->SetCapacity(kKP, 4096);
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("foo1", "bar1"));
+  ASSERT_OK(Put("foo2", "bar2"));
+  ASSERT_OK(Flush());
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 0);
+
+  // first time, cache <foo1, bar1> in KP
+  ASSERT_EQ(Get("foo1"), "bar1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
   ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 1);
+
+  // KP hit, promote <foo1, bar1> to KV
+  ASSERT_EQ(Get("foo1"), "bar1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 1);
+
+  // KV hit <foo1, bar1>.
+  ASSERT_EQ(Get("foo1"), "bar1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 1);
+
+  // KV hit <foo1, bar1> again.
+  ASSERT_EQ(Get("foo1"), "bar1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 1);
+
+  // first time <foo2, bar2>, cache to KP
+  ASSERT_EQ(Get("foo2"), "bar2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 2);
+
+  // update <foo, bar> to <foo, baz>
+  // cache stats should not change, because they are served
+  // by mem table.
+  ASSERT_OK(Put("foo1", "baz1"));
+  ASSERT_OK(Put("foo2", "baz2"));
+  ASSERT_EQ(Get("foo1"), "baz1");
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 2);
+
+  ASSERT_OK(Flush());
+  // <foo1 baz1> hit on KV, it's repopulated
+  ASSERT_EQ(Get("foo1"), "baz1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 2);
+
+  // miss on both KV and KP. as the KP entry is deleted.
+  // the miss will bing <foo2 baz2> to KP.
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 4);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  ASSERT_OK(Put("foo3", "bar3"));
+  ASSERT_OK(Flush());
+  Compact(nullptr, nullptr);
+
+  // hit on KV, as compaction does not affect KV cache
+  ASSERT_EQ(Get("foo1"), "baz1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 4);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 4);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  // hit on KP. but its invalid as compaction as already deleted
+  // the original file, so the KP entry is invalid
+  // read it from SST and and bring it to KV (promoted)
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 4);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 5);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  // should hit on KV
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 5);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 5);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  // should hit on KV, as it is promoted to KV
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 6);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 5);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
 }
 
 TEST_F(DBTest, PinnableSliceAndRowCache) {

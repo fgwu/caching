@@ -54,10 +54,20 @@
 
 namespace rocksdb {
 
+struct FilePointerAndBlockHandle {
+  // copiable data structure. We will drop the TableReader pointer inside it
+  // as when the cached BlockPointer is found again, the TableReader pointer
+  // may no longer be valid.
+  FilePointer file_pointer;
+  BlockHandle block_handle;
+
+  FilePointerAndBlockHandle() : block_handle(0, 0) {}
+};
+
 namespace {
 
-static void DeleteKVEntry(const Slice & /*key*/, void *value) {
-  std::string *typed_value = reinterpret_cast<std::string *>(value);
+template <class T> static void DeleteEntry(const Slice & /*key*/, void *value) {
+  T *typed_value = reinterpret_cast<T *>(value);
   delete typed_value;
 }
 
@@ -119,7 +129,6 @@ class FilePicker {
              const InternalKeyComparator* internal_comparator)
       : num_levels_(num_levels),
         curr_level_(static_cast<unsigned int>(-1)),
-        returned_file_level_(static_cast<unsigned int>(-1)),
         hit_file_level_(static_cast<unsigned int>(-1)),
         search_left_bound_(0),
         search_right_bound_(FileIndexer::kLevelMaxIndex),
@@ -223,7 +232,9 @@ class FilePicker {
         }
         prev_file_ = f;
 #endif
-        returned_file_level_ = curr_level_;
+        saved_file_level_ = curr_level_;
+        saved_index_in_level_ = curr_index_in_curr_level_;
+        saved_packed_number_and_path_id_ = f->fd.packed_number_and_path_id;
         if (curr_level_ > 0 && cmp_largest < 0) {
           // No more files to search in this level.
           search_ended_ = !PrepareNextLevel();
@@ -239,6 +250,35 @@ class FilePicker {
     return nullptr;
   }
 
+  void SaveFilePointer(FilePointer *file_pointer) {
+    file_pointer->level = saved_file_level_;
+    file_pointer->index_in_level = saved_index_in_level_;
+    file_pointer->packed_number_and_path_id = saved_packed_number_and_path_id_;
+  }
+
+  FdWithKeyRange *GetFileFromPointer(FilePointer *file_pointer) {
+    if (file_pointer->level >= num_levels_) {
+      return nullptr;
+    }
+
+    auto file_level = &(*level_files_brief_)[file_pointer->level];
+
+    if (file_pointer->index_in_level >= file_level->num_files) {
+      return nullptr;
+    }
+
+    FdWithKeyRange *f = &file_level->files[file_pointer->index_in_level];
+
+    // We check if the packed_nummber_and_path_id agrees with the current fd
+    // and the cached fd. The file may no longer exist due to Compaction.
+    if (f->fd.packed_number_and_path_id !=
+        file_pointer->packed_number_and_path_id) {
+      return nullptr;
+    }
+
+    return f;
+  }
+
   // getter for current file level
   // for GET_HIT_L0, GET_HIT_L1 & GET_HIT_L2_AND_UP counts
   unsigned int GetHitFileLevel() { return hit_file_level_; }
@@ -250,7 +290,9 @@ class FilePicker {
  private:
   unsigned int num_levels_;
   unsigned int curr_level_;
-  unsigned int returned_file_level_;
+  unsigned int saved_file_level_;     // level
+  unsigned int saved_index_in_level_; // file index within level
+  unsigned int saved_packed_number_and_path_id_;
   unsigned int hit_file_level_;
   int32_t search_left_bound_;
   int32_t search_right_bound_;
@@ -1636,16 +1678,21 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
   }
 
   std::string *kv_cache_entry = nullptr;
+  FilePointerAndBlockHandle *kp_cache_entry = nullptr;
   auto uni_cache = cfd_->ioptions()->uni_cache;
-  IterKey kv_cache_key;
+  IterKey uni_cache_key;
   std::string kv_cache_entry_buffer;
+  bool kp_cache_entry_found = false;
+  bool found_kp_cache_entry_valid = false;
+  FilePointerAndBlockHandle kp_cache_entry_buffer;
+  assert(kp_cache_entry_buffer.block_handle.IsNull());
   if (!merge_operator_ && uni_cache && !get_context.NeedToReadSequence()) {
     // check UniCache
     // construct uni_cache_lookup_key
     //    auto user_key = ExtractUserKey(k);
-    kv_cache_key.TrimAppend(kv_cache_key.Size(), user_key.data(),
-                            user_key.size());
-    if (auto kv_handle = uni_cache->Lookup(kKV, kv_cache_key.GetUserKey())) {
+    uni_cache_key.TrimAppend(uni_cache_key.Size(), user_key.data(),
+                             user_key.size());
+    if (auto kv_handle = uni_cache->Lookup(kKV, uni_cache_key.GetUserKey())) {
       // Cleanable routine to release the cache entry
       Cleanable value_pinner;
       auto release_cache_entry_func = [](void *cache_to_clean,
@@ -1676,6 +1723,21 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       // Not found, setting up the replay log.
       RecordTick(db_statistics_, KV_CACHE_MISS);
       kv_cache_entry = &kv_cache_entry_buffer;
+
+      // since KV cache misses, we try KP cache.
+      // if KP cache hit, kp_cache_entry is pointing to a valid FdAndBlockHandle
+      // else, kp_cache_entry points to kv_cache_entry_buffer, which can be
+      // tested valid by (kv_cache_entry_buffer.block_handle.IsNull() == true)
+      if (auto kp_handle = uni_cache->Lookup(kKP, uni_cache_key.GetUserKey())) {
+        kp_cache_entry = static_cast<FilePointerAndBlockHandle *>(
+            uni_cache->Value(kp_handle));
+        kp_cache_entry_found = true;
+        RecordTick(db_statistics_, KP_CACHE_HIT);
+      } else {
+        kp_cache_entry_found = false;
+        kp_cache_entry = &kp_cache_entry_buffer;
+        RecordTick(db_statistics_, KP_CACHE_MISS);
+      }
     }
   }
 
@@ -1683,7 +1745,25 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       storage_info_.files_, user_key, ikey, &storage_info_.level_files_brief_,
       storage_info_.num_non_empty_levels_, &storage_info_.file_indexer_,
       user_comparator(), internal_comparator());
-  FdWithKeyRange* f = fp.GetNextFile();
+  FdWithKeyRange *f;
+
+  if (kp_cache_entry_found) {
+    assert(!kp_cache_entry->block_handle.IsNull());
+    if ((f = fp.GetFileFromPointer(&kp_cache_entry->file_pointer)) != nullptr) {
+      found_kp_cache_entry_valid = true;
+      RecordTick(db_statistics_, KP_CACHE_HIT_VALID);
+    } else {
+      found_kp_cache_entry_valid = false;
+      // file no longer exists, the cache kp is no longer valid. Erase it.
+      uni_cache->Erase(kKP, uni_cache_key.GetUserKey());
+      kp_cache_entry = &kp_cache_entry_buffer;
+      f = fp.GetNextFile();
+      RecordTick(db_statistics_, KP_CACHE_HIT_INVALID);
+    }
+  } else {
+    kp_cache_entry = &kp_cache_entry_buffer;
+    f = fp.GetNextFile();
+  }
 
   while (f != nullptr) {
     if (*max_covering_tombstone_seq > 0) {
@@ -1696,6 +1776,18 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     }
 
     get_context.SetKVLog(kv_cache_entry); // nullptr if no cache
+
+    // reset kp_cache_entry_buffer. Because in the normal case where
+    // kp cache is not used, the while loop will cycle for several times.
+    // each time the block handle is remembered in kp_cache_entry_buffer.
+    // we should void a new cycle sees a valid block handle. otherwise
+    // the save block handle will be used to fetch block.
+    kp_cache_entry_buffer.block_handle = BlockHandle::NullBlockHandle();
+
+    // if the block_handle is not Null, use it
+    // if the block_handle is Null, save the return block iiter
+    get_context.SetBlockHandle(&kp_cache_entry->block_handle);
+
     bool timer_enabled =
         GetPerfLevel() >= PerfLevel::kEnableTimeExceptForMutex &&
         get_perf_context()->per_level_perf_context_enabled;
@@ -1713,6 +1805,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                                 fp.GetCurrentLevel());
     }
     get_context.SetKVLog(nullptr);
+    get_context.SetBlockHandle(nullptr);
 
     if (!status->ok()) {
       return;
@@ -1739,14 +1832,38 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
         } else if (fp.GetHitFileLevel() >= 2) {
           RecordTick(db_statistics_, GET_HIT_L2_AND_UP);
         }
-        // insert to KV cache if found
-        if (kv_cache_entry && !kv_cache_entry->empty()) {
-          size_t charge = kv_cache_key.Size() + kv_cache_entry->size() +
-                          sizeof(std::string);
-          void *row_ptr = new std::string(std::move(*kv_cache_entry));
-          uni_cache->Insert(kKV, kv_cache_key.GetUserKey(), row_ptr, charge,
-                            &DeleteKVEntry);
+
+        if (uni_cache) {
+          if (kp_cache_entry_found || uni_cache->GetCapacity(kKP) == 0) {
+            // insert to KV cache if:
+            // 1) found the second time
+            // 2) no KP cache, we can only use KV cache.
+            if (kv_cache_entry && !kv_cache_entry->empty()) {
+              size_t charge = uni_cache_key.Size() + kv_cache_entry->size() +
+                              sizeof(std::string);
+              void *row_ptr = new std::string(std::move(*kv_cache_entry));
+              uni_cache->Insert(kKV, uni_cache_key.GetUserKey(), row_ptr,
+                                charge, &DeleteEntry<std::string>);
+            }
+            // promoted to KV cache, delete the old KP Cache entry.
+            if (found_kp_cache_entry_valid && uni_cache->GetCapacity(kKP)) {
+              uni_cache->Erase(kKP, uni_cache_key.GetUserKey());
+            }
+          } else {
+            // insert into KP cache if found the first time.
+            if ((!kp_cache_entry_found || !found_kp_cache_entry_valid) &&
+                !kp_cache_entry->block_handle.IsNull()) {
+              fp.SaveFilePointer(&kp_cache_entry->file_pointer);
+              size_t charge =
+                  uni_cache_key.Size() + sizeof(FilePointerAndBlockHandle);
+              void *kp_ptr =
+                  new FilePointerAndBlockHandle(std::move(*kp_cache_entry));
+              uni_cache->Insert(kKP, uni_cache_key.GetUserKey(), kp_ptr, charge,
+                                &DeleteEntry<FilePointerAndBlockHandle>);
+            }
+          }
         }
+
         PERF_COUNTER_BY_LEVEL_ADD(user_key_return_count, 1, fp.GetHitFileLevel());
         return;
       case GetContext::kDeleted:
@@ -1762,6 +1879,11 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
             "Encounter unexpected blob index. Please open DB with "
             "rocksdb::blob_db::BlobDB instead.");
         return;
+    }
+    if (uni_cache && kp_cache_entry_found && found_kp_cache_entry_valid) {
+      // if kp_cache_entry is valid, it should have return already in the
+      // switch case. The execution should never reach here.
+      assert(0);
     }
     f = fp.GetNextFile();
   }

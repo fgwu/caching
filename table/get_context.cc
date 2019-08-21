@@ -52,7 +52,7 @@ GetContext::GetContext(const Comparator *ucmp,
       pinnable_val_(pinnable_val), value_found_(value_found),
       merge_context_(merge_context),
       max_covering_tombstone_seq_(_max_covering_tombstone_seq), env_(env),
-      seq_(seq), replay_log_(nullptr), kv_log_(nullptr),
+      seq_(seq), replay_log_(nullptr), kv_log_(nullptr), block_handle_(nullptr),
       pinned_iters_mgr_(_pinned_iters_mgr), callback_(callback),
       is_blob_index_(is_blob_index) {
   if (seq_) {

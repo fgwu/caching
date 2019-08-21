@@ -2820,6 +2820,48 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
   bool may_match;
   FilterBlockReader* filter = nullptr;
   BlockCacheLookupContext lookup_context{BlockCacheLookupCaller::kUserGet};
+
+  BlockHandle *saved_block_handle = get_context->GetSavedBlockHandle();
+  bool saved_block_handle_valid = false;
+
+  // direct fetch the block if the KP cache entry is valid.
+  if (saved_block_handle && !saved_block_handle->IsNull()) {
+    DataBlockIter biter;
+    NewDataBlockIterator<DataBlockIter>(
+        read_options, *saved_block_handle, &biter, BlockType::kData,
+        /*key_includes_seq=*/true,
+        /*index_key_is_full=*/true, get_context, &lookup_context,
+        /*s=*/Status(), /*prefetch_buffer*/ nullptr);
+
+    if (read_options.read_tier == kBlockCacheTier &&
+        biter.status().IsIncomplete()) {
+      // couldn't get block from block_cache
+      // Update Saver.state to Found because we are only looking for
+      // whether we can guarantee the key is not there when "no_io" is set
+      get_context->MarkKeyMayExist();
+      return biter.status();
+    }
+    if (!biter.status().ok()) {
+      return biter.status();
+    }
+
+    bool may_exist = biter.SeekForGet(key);
+    assert(may_exist); // the key must exist.
+
+    // Call the *saver function on each entry/block until it returns false
+    for (; biter.Valid(); biter.Next()) {
+      ParsedInternalKey parsed_key;
+      if (!ParseInternalKey(biter.key(), &parsed_key)) {
+        s = Status::Corruption(Slice());
+      }
+      bool dummy_matched = false; // if such user key mathced a key in SST
+      if (!get_context->SaveValue(parsed_key, biter.value(), &dummy_matched,
+                                  biter.IsValuePinned() ? &biter : nullptr)) {
+      }
+    }
+    return biter.status();
+  }
+
   {
     if (!skip_filters) {
       filter_entry = GetFilter(prefix_extractor, /*prefetch_buffer=*/nullptr,
@@ -2916,6 +2958,9 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
                   parsed_key, biter.value(), &matched,
                   biter.IsValuePinned() ? &biter : nullptr)) {
             done = true;
+            if (!saved_block_handle_valid) {
+              get_context->SaveBlockHandle(iiter->value());
+            }
             break;
           }
         }

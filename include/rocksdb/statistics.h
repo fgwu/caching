@@ -227,6 +227,10 @@ enum Tickers : uint32_t {
   // Univeral cache.
   KV_CACHE_HIT,
   KV_CACHE_MISS,
+  KP_CACHE_HIT,
+  KP_CACHE_HIT_VALID,
+  KP_CACHE_HIT_INVALID,
+  KP_CACHE_MISS,
 
   // Read amplification statistics.
   // Read amplification can be calculated using this formula

@@ -13,6 +13,19 @@ struct UniCacheKey {
   UniCacheEntryType type;
 };
 
+// using level and index_in_level to locate a file.
+// if the FileDescriptor agrees with packed_number_and_path_id,
+// it means the file is still valid.
+struct FilePointer {
+  unsigned int level;
+  unsigned int index_in_level;
+  uint64_t packed_number_and_path_id;
+
+  FilePointer() : level(0), index_in_level(0), packed_number_and_path_id(0) {}
+};
+
+struct FilePointerAndBlockHandle;
+
 class UniCache : public Cache {
 public:
   UniCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
@@ -59,13 +72,19 @@ public:
 
   virtual void SetCapacity(size_t capacity) override;
 
+  virtual void SetCapacity(UniCacheEntryType type, size_t capacity);
+
   virtual void SetStrictCapacityLimit(bool strict_capacity_limit) override;
 
   virtual bool HasStrictCapacityLimit() const override;
 
   virtual size_t GetCapacity() const override;
 
+  virtual size_t GetCapacity(UniCacheEntryType type) const;
+
   virtual size_t GetUsage() const override;
+
+  virtual size_t GetUsage(UniCacheEntryType type) const;
 
   virtual size_t GetUsage(Handle *handle) const override;
 
