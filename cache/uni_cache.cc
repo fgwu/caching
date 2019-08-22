@@ -5,13 +5,16 @@
 
 namespace rocksdb {
 
-const double kKVCacheRatio = 1;
-
 UniCacheFix::UniCacheFix(
-    size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-    std::shared_ptr<MemoryAllocator> /*memory_allocator*/) {
-  size_t kv_cache_capacity = capacity * kKVCacheRatio;
-  size_t kp_cache_capacity = capacity - kv_cache_capacity;
+			 size_t capacity, double kp_cache_ratio, int num_shard_bits, bool strict_capacity_limit,
+			 std::shared_ptr<MemoryAllocator> /*memory_allocator*/) {
+  if (kp_cache_ratio > 1 || kp_cache_ratio < 0) {
+    kp_cache_ratio_ = 0;
+  } else {
+    kp_cache_ratio_ = kp_cache_ratio;
+  }
+  size_t kp_cache_capacity = capacity * kp_cache_ratio_;
+  size_t kv_cache_capacity = capacity - kp_cache_capacity;
   kv_cache_ =
       NewLRUCache(kv_cache_capacity, num_shard_bits, strict_capacity_limit);
   kp_cache_ =
@@ -92,8 +95,8 @@ void UniCacheFix::Erase(UniCacheEntryType type, const Slice &key) {
 }
 
 void UniCacheFix::SetCapacity(size_t capacity) {
-  size_t kv_cache_capacity = capacity * kKVCacheRatio;
-  size_t kp_cache_capacity = capacity - kv_cache_capacity;
+  size_t kp_cache_capacity = capacity * kp_cache_ratio_;
+  size_t kv_cache_capacity = capacity - kp_cache_capacity;
 
   kv_cache_->SetCapacity(kv_cache_capacity);
   kp_cache_->SetCapacity(kp_cache_capacity);
@@ -199,7 +202,7 @@ void UniCacheFix::EraseUnRefEntries() {
 }
 
 std::shared_ptr<UniCache>
-NewUniCacheFix(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits, bool strict_capacity_limit,
                double /*high_pri_pool_ratio*/,
                std::shared_ptr<MemoryAllocator> memory_allocator,
                bool /*use_adaptive_mutex*/) {
@@ -210,7 +213,7 @@ NewUniCacheFix(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
   if (num_shard_bits < 0) {
     num_shard_bits = GetDefaultCacheShardBits(capacity);
   }
-  return std::make_shared<UniCacheFix>(capacity, num_shard_bits,
+  return std::make_shared<UniCacheFix>(capacity, kp_cache_ratio,  num_shard_bits,
                                        strict_capacity_limit,
                                        std::move(memory_allocator));
 }

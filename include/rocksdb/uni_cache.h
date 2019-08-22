@@ -83,7 +83,7 @@ public:
 
 class UniCacheFix : public UniCache {
 public:
-  UniCacheFix(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+  UniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits, bool strict_capacity_limit,
               std::shared_ptr<MemoryAllocator> memory_allocator = nullptr);
   virtual ~UniCacheFix();
 
@@ -140,10 +140,11 @@ public:
 private:
   std::shared_ptr<Cache> kv_cache_;
   std::shared_ptr<Cache> kp_cache_;
+  double kp_cache_ratio_;
 };
 
 extern std::shared_ptr<UniCache>
-NewUniCacheFix(size_t capacity, int num_shard_bits = -1,
+NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits = -1,
                bool strict_capacity_limit = false,
                double high_pri_pool_ratio = 0.0,
                std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
