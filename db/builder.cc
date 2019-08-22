@@ -192,10 +192,28 @@ Status BuildTable(
         // if this key == last user key, discard. becuase cache only store the
         // latest one.
         IterKey uni_cache_key;
+        // KV/KP lookup_key = cf_id | seqno | user_key.
+        // we append the sequence number (incremented by 1 to
+        // distinguish from 0) only in this case.
+
+        // adding cf_id
+        char encode_buf[10];
+        auto ptr = EncodeVarint32(encode_buf, column_family_id);
+        uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                                 ptr - encode_buf);
+        // adding seq_no. Note that we only keep the lastest one and do not
+        // repopulate the cached older version for snapshots.
+        // TODO(fgwu): adding snapshot support.
+        uint64_t seq_no = 0;
+        ptr = EncodeVarint64(encode_buf, seq_no);
+        uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                                 ptr - encode_buf);
+        // adding the key itself
         uni_cache_key.TrimAppend(uni_cache_key.Size(), ikey.user_key.data(),
                                  ikey.user_key.size());
         switch (ikey.type) {
         case kTypeDeletion:
+        case kTypeSingleDeletion:
           uni_cache->Erase(kKV, uni_cache_key.GetUserKey());
           uni_cache->Erase(kKP, uni_cache_key.GetUserKey());
           break;

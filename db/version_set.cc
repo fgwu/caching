@@ -1689,7 +1689,24 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
   if (!merge_operator_ && uni_cache && !get_context.NeedToReadSequence()) {
     // check UniCache
     // construct uni_cache_lookup_key
-    //    auto user_key = ExtractUserKey(k);
+
+    // KV/KP lookup_key = cf_id | seqno | user_key.
+    // we append the sequence number (incremented by 1 to
+    // distinguish from 0) only in this case.
+
+    // adding cf_id
+    uint32_t cf_id = cfd_->GetID();
+    char encode_buf[10];
+    auto ptr = EncodeVarint32(encode_buf, cf_id);
+    uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                             ptr - encode_buf);
+    // adding seq_no
+    uint64_t seq_no =
+        read_options.snapshot == nullptr ? 0 : 1 + GetInternalKeySeqno(ikey);
+    ptr = EncodeVarint64(encode_buf, seq_no);
+    uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                             ptr - encode_buf);
+    // adding the key itself
     uni_cache_key.TrimAppend(uni_cache_key.Size(), user_key.data(),
                              user_key.size());
     if (auto kv_handle = uni_cache->Lookup(kKV, uni_cache_key.GetUserKey())) {

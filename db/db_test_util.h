@@ -721,6 +721,7 @@ class DBTestBase : public testing::Test {
     kSkipNoSeekToLast = 32,
     kSkipFIFOCompaction = 128,
     kSkipMmapReads = 256,
+    kSkipUniCache = 512,
   };
 
   const int kRangeDelSkipConfigs =

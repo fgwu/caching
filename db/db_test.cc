@@ -604,7 +604,8 @@ TEST_F(DBTest, ReadFromPersistedTier) {
         DestroyAndReopen(options);
       }
     }
-  } while (ChangeOptions());
+  } while (ChangeOptions(kSkipUniCache)); // TODO(fwu): think better way to
+                                          // sanitize disableWAL with UniCache.
 }
 
 TEST_F(DBTest, SingleDeleteFlush) {

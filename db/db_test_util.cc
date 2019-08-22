@@ -147,6 +147,9 @@ bool DBTestBase::ShouldSkipOptions(int option_config, int skip_mask) {
     if ((skip_mask & kSkipMmapReads) && option_config == kWalDirAndMmapReads) {
       return true;
     }
+    if ((skip_mask & kSkipUniCache) && option_config == kUniCache) {
+      return true;
+    }
     return false;
 }
 
