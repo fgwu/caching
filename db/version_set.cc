@@ -1856,15 +1856,18 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
             // insert to KV cache if:
             // 1) found the second time
             // 2) no KP cache, we can only use KV cache.
+	    Status insert_status;
             if (kv_cache_entry && !kv_cache_entry->empty()) {
               size_t charge = uni_cache_key.Size() + kv_cache_entry->size() +
                               sizeof(std::string);
               void *row_ptr = new std::string(std::move(*kv_cache_entry));
-              uni_cache->Insert(kKV, uni_cache_key.GetUserKey(), row_ptr,
+              insert_status = uni_cache->Insert(kKV, uni_cache_key.GetUserKey(), row_ptr,
                                 charge, &DeleteEntry<std::string>);
             }
             // promoted to KV cache, delete the old KP Cache entry.
-            if (found_kp_cache_entry_valid && uni_cache->GetCapacity(kKP)) {
+	    // note that we only delete the KP when the KV insertion succeed.
+            if (found_kp_cache_entry_valid && uni_cache->GetCapacity(kKP) &&
+		uni_cache->GetCapacity(kKV) && insert_status.ok()) {
               uni_cache->Erase(kKP, uni_cache_key.GetUserKey());
             }
           } else {
