@@ -7,9 +7,9 @@ namespace rocksdb {
 
 const double kKVCacheRatio = 1;
 
-UniCache::UniCache(size_t capacity, int num_shard_bits,
-                   bool strict_capacity_limit,
-                   std::shared_ptr<MemoryAllocator> /*memory_allocator*/) {
+UniCacheFix::UniCacheFix(
+    size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+    std::shared_ptr<MemoryAllocator> /*memory_allocator*/) {
   size_t kv_cache_capacity = capacity * kKVCacheRatio;
   size_t kp_cache_capacity = capacity - kv_cache_capacity;
   kv_cache_ =
@@ -18,12 +18,12 @@ UniCache::UniCache(size_t capacity, int num_shard_bits,
       NewLRUCache(kp_cache_capacity, num_shard_bits, strict_capacity_limit);
 }
 
-UniCache::~UniCache() {}
+UniCacheFix::~UniCacheFix() {}
 
-Status UniCache::Insert(UniCacheEntryType type, const Slice &key, void *value,
-                        size_t charge,
-                        void (*deleter)(const Slice &key, void *value),
-                        Cache::Handle **handle, Cache::Priority priority) {
+Status UniCacheFix::Insert(UniCacheEntryType type, const Slice &key,
+                           void *value, size_t charge,
+                           void (*deleter)(const Slice &key, void *value),
+                           Cache::Handle **handle, Cache::Priority priority) {
   switch (type) {
   case kKV:
     return kv_cache_->Insert(key, value, charge, deleter, handle, priority);
@@ -34,8 +34,8 @@ Status UniCache::Insert(UniCacheEntryType type, const Slice &key, void *value,
   }
 }
 
-Cache::Handle *UniCache::Lookup(UniCacheEntryType type, const Slice &key,
-                                Statistics *stats) {
+Cache::Handle *UniCacheFix::Lookup(UniCacheEntryType type, const Slice &key,
+                                   Statistics *stats) {
   switch (type) {
   case kKV:
     return kv_cache_->Lookup(key, stats);
@@ -46,7 +46,7 @@ Cache::Handle *UniCache::Lookup(UniCacheEntryType type, const Slice &key,
   }
 }
 
-bool UniCache::Ref(UniCacheEntryType type, Cache::Handle *handle) {
+bool UniCacheFix::Ref(UniCacheEntryType type, Cache::Handle *handle) {
   switch (type) {
   case kKV:
     return kv_cache_->Ref(handle);
@@ -57,8 +57,8 @@ bool UniCache::Ref(UniCacheEntryType type, Cache::Handle *handle) {
   }
 }
 
-bool UniCache::Release(UniCacheEntryType type, Cache::Handle *handle,
-                       bool force_erase) {
+bool UniCacheFix::Release(UniCacheEntryType type, Cache::Handle *handle,
+                          bool force_erase) {
   switch (type) {
   case kKV:
     return kv_cache_->Release(handle, force_erase);
@@ -69,7 +69,7 @@ bool UniCache::Release(UniCacheEntryType type, Cache::Handle *handle,
   }
 }
 
-void *UniCache::Value(UniCacheEntryType type, Cache::Handle *handle) {
+void *UniCacheFix::Value(UniCacheEntryType type, Cache::Handle *handle) {
   switch (type) {
   case kKV:
     return kv_cache_->Value(handle);
@@ -80,7 +80,7 @@ void *UniCache::Value(UniCacheEntryType type, Cache::Handle *handle) {
   }
 }
 
-void UniCache::Erase(UniCacheEntryType type, const Slice &key) {
+void UniCacheFix::Erase(UniCacheEntryType type, const Slice &key) {
   switch (type) {
   case kKV:
     return kv_cache_->Erase(key);
@@ -91,7 +91,7 @@ void UniCache::Erase(UniCacheEntryType type, const Slice &key) {
   }
 }
 
-void UniCache::SetCapacity(size_t capacity) {
+void UniCacheFix::SetCapacity(size_t capacity) {
   size_t kv_cache_capacity = capacity * kKVCacheRatio;
   size_t kp_cache_capacity = capacity - kv_cache_capacity;
 
@@ -99,7 +99,7 @@ void UniCache::SetCapacity(size_t capacity) {
   kp_cache_->SetCapacity(kp_cache_capacity);
 }
 
-void UniCache::SetCapacity(UniCacheEntryType type, size_t capacity) {
+void UniCacheFix::SetCapacity(UniCacheEntryType type, size_t capacity) {
   size_t old_capacity = GetCapacity();
   size_t kv_cache_capacity;
   size_t kp_cache_capacity;
@@ -121,22 +121,22 @@ void UniCache::SetCapacity(UniCacheEntryType type, size_t capacity) {
   kp_cache_->SetCapacity(kp_cache_capacity);
 }
 
-void UniCache::SetStrictCapacityLimit(bool strict_capacity_limit) {
+void UniCacheFix::SetStrictCapacityLimit(bool strict_capacity_limit) {
   kv_cache_->SetStrictCapacityLimit(strict_capacity_limit);
   kp_cache_->SetStrictCapacityLimit(strict_capacity_limit);
 }
 
-bool UniCache::HasStrictCapacityLimit() const {
+bool UniCacheFix::HasStrictCapacityLimit() const {
   assert(kv_cache_->HasStrictCapacityLimit() ==
          kp_cache_->HasStrictCapacityLimit());
   return kv_cache_->HasStrictCapacityLimit();
 }
 
-size_t UniCache::GetCapacity() const {
+size_t UniCacheFix::GetCapacity() const {
   return kv_cache_->GetCapacity() + kp_cache_->GetCapacity();
 }
 
-size_t UniCache::GetCapacity(UniCacheEntryType type) const {
+size_t UniCacheFix::GetCapacity(UniCacheEntryType type) const {
   switch (type) {
   case kKV:
     return kv_cache_->GetCapacity();
@@ -147,11 +147,11 @@ size_t UniCache::GetCapacity(UniCacheEntryType type) const {
   }
 }
 
-size_t UniCache::GetUsage() const {
+size_t UniCacheFix::GetUsage() const {
   return kv_cache_->GetUsage() + kp_cache_->GetUsage();
 }
 
-size_t UniCache::GetUsage(UniCacheEntryType type) const {
+size_t UniCacheFix::GetUsage(UniCacheEntryType type) const {
   switch (type) {
   case kKV:
     return kv_cache_->GetUsage();
@@ -162,11 +162,12 @@ size_t UniCache::GetUsage(UniCacheEntryType type) const {
   }
 }
 
-size_t UniCache::GetUsage(Cache::Handle *handle) const {
+size_t UniCacheFix::GetUsage(Cache::Handle *handle) const {
   return kv_cache_->GetUsage(handle) + kp_cache_->GetUsage(handle);
 }
 
-size_t UniCache::GetUsage(UniCacheEntryType type, Cache::Handle *handle) const {
+size_t UniCacheFix::GetUsage(UniCacheEntryType type,
+                             Cache::Handle *handle) const {
   switch (type) {
   case kKV:
     return kv_cache_->GetUsage(handle);
@@ -177,31 +178,31 @@ size_t UniCache::GetUsage(UniCacheEntryType type, Cache::Handle *handle) const {
   }
 }
 
-size_t UniCache::GetPinnedUsage() const {
+size_t UniCacheFix::GetPinnedUsage() const {
   return kv_cache_->GetPinnedUsage() + kp_cache_->GetPinnedUsage();
 }
 
-void UniCache::DisownData() {
+void UniCacheFix::DisownData() {
   kv_cache_->DisownData();
   kp_cache_->DisownData();
 }
 
-void UniCache::ApplyToAllCacheEntries(void (*callback)(void *, size_t),
-                                      bool thread_safe) {
+void UniCacheFix::ApplyToAllCacheEntries(void (*callback)(void *, size_t),
+                                         bool thread_safe) {
   kv_cache_->ApplyToAllCacheEntries(callback, thread_safe);
   kp_cache_->ApplyToAllCacheEntries(callback, thread_safe);
 }
 
-void UniCache::EraseUnRefEntries() {
+void UniCacheFix::EraseUnRefEntries() {
   kv_cache_->EraseUnRefEntries();
   kp_cache_->EraseUnRefEntries();
 }
 
 std::shared_ptr<UniCache>
-NewUniCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-            double /*high_pri_pool_ratio*/,
-            std::shared_ptr<MemoryAllocator> memory_allocator,
-            bool /*use_adaptive_mutex*/) {
+NewUniCacheFix(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+               double /*high_pri_pool_ratio*/,
+               std::shared_ptr<MemoryAllocator> memory_allocator,
+               bool /*use_adaptive_mutex*/) {
   if (num_shard_bits >= 20) {
     return nullptr; // the cache cannot be sharded into too many fine pieces
   }
@@ -209,9 +210,9 @@ NewUniCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
   if (num_shard_bits < 0) {
     num_shard_bits = GetDefaultCacheShardBits(capacity);
   }
-  return std::make_shared<UniCache>(capacity, num_shard_bits,
-                                    strict_capacity_limit,
-                                    std::move(memory_allocator));
+  return std::make_shared<UniCacheFix>(capacity, num_shard_bits,
+                                       strict_capacity_limit,
+                                       std::move(memory_allocator));
 }
 
 } // namespace rocksdb

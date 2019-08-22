@@ -115,13 +115,6 @@ extern std::shared_ptr<Cache> NewClockCache(size_t capacity,
                                             int num_shard_bits = -1,
                                             bool strict_capacity_limit = false);
 
-extern std::shared_ptr<UniCache>
-NewUniCache(size_t capacity, int num_shard_bits = -1,
-            bool strict_capacity_limit = false,
-            double high_pri_pool_ratio = 0.0,
-            std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
-            bool use_adaptive_mutex = kDefaultToAdaptiveMutex);
-
 class Cache {
  public:
   // Depending on implementation, cache entries with high priority could be less

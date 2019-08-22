@@ -518,7 +518,7 @@ Options DBTestBase::GetOptions(
       break;
     }
     case kUniCache: {
-      options.uni_cache = NewUniCache(1024 * 1024);
+      options.uni_cache = NewUniCacheFix(1024 * 1024);
       break;
     }
     case kRecycleLogFiles: {

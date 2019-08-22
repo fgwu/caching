@@ -3702,9 +3702,9 @@ class Benchmark {
     if (FLAGS_uni_cache_size) {
       if (FLAGS_cache_numshardbits >= 1) {
         options.uni_cache =
-            NewUniCache(FLAGS_uni_cache_size, FLAGS_cache_numshardbits);
+            NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_cache_numshardbits);
       } else {
-        options.uni_cache = NewUniCache(FLAGS_uni_cache_size);
+        options.uni_cache = NewUniCacheFix(FLAGS_uni_cache_size);
       }
     }
     if (FLAGS_enable_io_prio) {
