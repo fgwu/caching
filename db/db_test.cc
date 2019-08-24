@@ -6002,8 +6002,8 @@ TEST_F(DBTest, RowCache) {
 TEST_F(DBTest, UniCacheKV) {
   Options options = CurrentOptions();
   options.statistics = rocksdb::CreateDBStatistics();
-  options.uni_cache = NewUniCacheFix(8192);
-  options.uni_cache->SetCapacity(kKP, 0); // only test KV.
+  // set kp_ratio = 0 so all the cache is KV cache
+  options.uni_cache = NewUniCacheFix(8192, 0 /*kp_ratio*/);
   DestroyAndReopen(options);
 
   ASSERT_OK(Put("foo", "bar"));
@@ -6039,8 +6039,7 @@ TEST_F(DBTest, UniCacheKV) {
 TEST_F(DBTest, UniCacheKVKP) {
   Options options = CurrentOptions();
   options.statistics = rocksdb::CreateDBStatistics();
-  options.uni_cache = NewUniCacheFix(8192);
-  options.uni_cache->SetCapacity(kKP, 4096);
+  options.uni_cache = NewUniCacheFix(8192, 0.5 /*kp_ratio*/);
   DestroyAndReopen(options);
 
   ASSERT_OK(Put("foo1", "bar1"));

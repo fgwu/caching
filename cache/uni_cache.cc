@@ -6,8 +6,9 @@
 namespace rocksdb {
 
 UniCacheFix::UniCacheFix(
-			 size_t capacity, double kp_cache_ratio, int num_shard_bits, bool strict_capacity_limit,
-			 std::shared_ptr<MemoryAllocator> /*memory_allocator*/) {
+    size_t capacity, double kp_cache_ratio, int num_shard_bits,
+    bool strict_capacity_limit,
+    std::shared_ptr<MemoryAllocator> /*memory_allocator*/) {
   if (kp_cache_ratio > 1 || kp_cache_ratio < 0) {
     kp_cache_ratio_ = 0;
   } else {
