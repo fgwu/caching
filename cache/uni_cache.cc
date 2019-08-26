@@ -25,7 +25,7 @@ UniCacheFix::UniCacheFix(
 UniCacheFix::~UniCacheFix() {}
 
 Status UniCacheFix::Insert(UniCacheEntryType type, const Slice &key,
-                           void *value, size_t charge,
+                           void *value, size_t charge, int /*level*/,
                            void (*deleter)(const Slice &key, void *value),
                            Cache::Handle **handle, Cache::Priority priority) {
   switch (type) {
@@ -203,8 +203,8 @@ void UniCacheFix::EraseUnRefEntries() {
 }
 
 std::shared_ptr<UniCache>
-NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits, bool strict_capacity_limit,
-               double /*high_pri_pool_ratio*/,
+NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits,
+               bool strict_capacity_limit, double /*high_pri_pool_ratio*/,
                std::shared_ptr<MemoryAllocator> memory_allocator,
                bool /*use_adaptive_mutex*/) {
   if (num_shard_bits >= 20) {
@@ -214,7 +214,7 @@ NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits, bool 
   if (num_shard_bits < 0) {
     num_shard_bits = GetDefaultCacheShardBits(capacity);
   }
-  return std::make_shared<UniCacheFix>(capacity, kp_cache_ratio,  num_shard_bits,
+  return std::make_shared<UniCacheFix>(capacity, kp_cache_ratio, num_shard_bits,
                                        strict_capacity_limit,
                                        std::move(memory_allocator));
 }

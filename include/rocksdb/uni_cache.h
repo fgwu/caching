@@ -33,7 +33,7 @@ public:
   virtual const char *Name() const = 0;
 
   virtual Status Insert(UniCacheEntryType type, const Slice &uni_key,
-                        void *value, size_t charge,
+                        void *value, size_t charge, int level,
                         void (*deleter)(const Slice &key, void *value),
                         Cache::Handle **handle = nullptr,
                         Cache::Priority priority = Cache::Priority::LOW) = 0;
@@ -83,7 +83,8 @@ public:
 
 class UniCacheFix : public UniCache {
 public:
-  UniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits, bool strict_capacity_limit,
+  UniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits,
+              bool strict_capacity_limit,
               std::shared_ptr<MemoryAllocator> memory_allocator = nullptr);
   virtual ~UniCacheFix();
 
@@ -91,7 +92,8 @@ public:
 
   virtual Status
   Insert(UniCacheEntryType type, const Slice &uni_key, void *value,
-         size_t charge, void (*deleter)(const Slice &key, void *value),
+         size_t charge, int level,
+         void (*deleter)(const Slice &key, void *value),
          Cache::Handle **handle = nullptr,
          Cache::Priority priority = Cache::Priority::LOW) override;
 

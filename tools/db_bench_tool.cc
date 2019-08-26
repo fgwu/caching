@@ -492,7 +492,7 @@ DEFINE_int64(uni_cache_size, 0,
 
 DEFINE_double(uni_cache_kp_ratio, 0,
               "Ratio of UniCacheFix size used for the KP cache. "
-	      "0 means no KP cache, and the UniCache space is used "
+              "0 means no KP cache, and the UniCache space is used "
               "as KV cache.");
 
 DEFINE_int32(open_files, rocksdb::Options().max_open_files,
@@ -3707,9 +3707,11 @@ class Benchmark {
     if (FLAGS_uni_cache_size) {
       if (FLAGS_cache_numshardbits >= 1) {
         options.uni_cache =
-	  NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_uni_cache_kp_ratio, FLAGS_cache_numshardbits);
+            NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_uni_cache_kp_ratio,
+                           FLAGS_cache_numshardbits);
       } else {
-        options.uni_cache = NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_uni_cache_kp_ratio);
+        options.uni_cache =
+            NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_uni_cache_kp_ratio);
       }
     }
     if (FLAGS_enable_io_prio) {

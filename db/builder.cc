@@ -228,7 +228,7 @@ Status BuildTable(
                             sizeof(std::string);
             void *row_ptr = new std::string(std::move(kv_cache_entry));
             uni_cache->Insert(kKV, uni_cache_key.GetUserKey(), row_ptr, charge,
-                              &DeleteKVEntry); // update if already exist
+                              level, &DeleteKVEntry); // update if already exist
           }
           // TODO(fwu): repopulate KP cache if found in KP cache
           uni_cache->Erase(kKP, uni_cache_key.GetUserKey());

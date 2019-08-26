@@ -256,6 +256,8 @@ class FilePicker {
     file_pointer->packed_number_and_path_id = saved_packed_number_and_path_id_;
   }
 
+  unsigned int GetSavedFileLevel() const { return saved_file_level_; }
+
   FdWithKeyRange *GetFileFromPointer(FilePointer *file_pointer) {
     if (file_pointer->level >= num_levels_) {
       return nullptr;
@@ -1861,9 +1863,12 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
               size_t charge = uni_cache_key.Size() + kv_cache_entry->size() +
                               sizeof(std::string);
               void *row_ptr = new std::string(std::move(*kv_cache_entry));
+              unsigned int level = found_kp_cache_entry_valid
+                                       ? kp_cache_entry->file_pointer.level
+                                       : fp.GetSavedFileLevel();
               insert_status =
                   uni_cache->Insert(kKV, uni_cache_key.GetUserKey(), row_ptr,
-                                    charge, &DeleteEntry<std::string>);
+                                    charge, level, &DeleteEntry<std::string>);
             }
             // promoted to KV cache, delete the old KP Cache entry.
             // note that we only delete the KP when the KV insertion succeed.
@@ -1878,10 +1883,11 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
               fp.SaveFilePointer(&kp_cache_entry->file_pointer);
               size_t charge =
                   uni_cache_key.Size() + sizeof(FilePointerAndBlockHandle);
+              unsigned int level = kp_cache_entry->file_pointer.level;
               void *kp_ptr =
                   new FilePointerAndBlockHandle(std::move(*kp_cache_entry));
               uni_cache->Insert(kKP, uni_cache_key.GetUserKey(), kp_ptr, charge,
-                                &DeleteEntry<FilePointerAndBlockHandle>);
+                                level, &DeleteEntry<FilePointerAndBlockHandle>);
             }
           }
         }
