@@ -151,11 +151,11 @@ class UniCacheAdapt : public UniCache {
 public:
   UniCacheAdapt() {}
 
-  virtual const char *Name() const override { return "UniCacheFix"; }
+  virtual const char *Name() const override { return "UniCacheAdapt"; }
 
   virtual size_t GetCapacity() const override;
 
-  virtual bool AdaptiveSupported() override { return false; }
+  virtual bool AdaptiveSupported() override { return true; }
 
 private:
   // the size is adjusted after each ghost hit.
