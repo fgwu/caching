@@ -669,6 +669,20 @@ class Version {
     return storage_info_.user_comparator_;
   }
 
+  void GetWithUniCacheFix(const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+           Status* status, MergeContext* merge_context,
+           SequenceNumber* max_covering_tombstone_seq,
+           bool* value_found = nullptr, bool* key_exists = nullptr,
+           SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
+           bool* is_blob = nullptr);
+
+  // void GetWithUniCacheAdapt(const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+  //          Status* status, MergeContext* merge_context,
+  //          SequenceNumber* max_covering_tombstone_seq,
+  //          bool* value_found = nullptr, bool* key_exists = nullptr,
+  //          SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
+  //          bool* is_blob = nullptr);
+  
   bool PrefixMayMatch(const ReadOptions& read_options,
                       InternalIterator* level_iter,
                       const Slice& internal_prefix) const;

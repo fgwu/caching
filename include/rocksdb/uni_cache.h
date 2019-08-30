@@ -79,6 +79,8 @@ public:
                                       bool thread_safe) = 0;
 
   virtual void EraseUnRefEntries() = 0;
+
+  virtual bool AdaptiveSupported() = 0;
 };
 
 class UniCacheFix : public UniCache {
@@ -139,10 +141,36 @@ public:
 
   virtual void EraseUnRefEntries() override;
 
+  virtual bool AdaptiveSupported() override { return false; }
+
 private:
   std::shared_ptr<Cache> kv_cache_;
   std::shared_ptr<Cache> kp_cache_;
   double kp_cache_ratio_;
+};
+
+class UniCacheAdapt : public UniCacheFix {
+public:
+  UniCacheAdapt(size_t capacity, double kp_cache_ratio, int num_shard_bits,
+                bool strict_capacity_limit,
+                std::shared_ptr<MemoryAllocator> memory_allocator);
+
+
+  // Cache::Handle *Lookup(UniCacheEntryType type, const Slice &key,
+  //                   ArcState *arc_state, Statistics *stats = nullptr);
+
+private:
+  // the size is adjusted after each ghost hit.
+  void AdjustSize() { assert(0); /*TODO(fwu)*/ }
+
+  std::shared_ptr<Cache> frequency_real_cache_;
+  std::shared_ptr<Cache> recency_real_cache_;
+
+  std::shared_ptr<Cache> frequency_ghost_cache_;
+  std::shared_ptr<Cache> recency_ghost_cache_;
+
+  size_t total_capacity_;
+  size_t target_kp_cache_capacity_;
 };
 
 extern std::shared_ptr<UniCache>
@@ -151,5 +179,12 @@ NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits = -1,
                double high_pri_pool_ratio = 0.0,
                std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
                bool use_adaptive_mutex = kDefaultToAdaptiveMutex);
+
+extern std::shared_ptr<UniCache>
+NewUniCacheAdapt(size_t capacity, double kp_cache_ratio,
+                 int num_shard_bits = -1, bool strict_capacity_limit = false,
+                 double high_pri_pool_ratio = 0.0,
+                 std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+                 bool use_adaptive_mutex = kDefaultToAdaptiveMutex);
 
 } // namespace rocksdb
