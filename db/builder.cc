@@ -171,10 +171,10 @@ Status BuildTable(
                       snapshot_checker);
 
     CompactionIterator c_iter(
-			      iter, internal_comparator.user_comparator(), &merge, kMaxSequenceNumber,
-			      &snapshots, earliest_write_conflict_snapshot, snapshot_checker, env,
-			      ShouldReportDetailedTime(env, ioptions.statistics),
-			      true /* internal key corruption is not ok */, range_del_agg.get());
+        iter, internal_comparator.user_comparator(), &merge, kMaxSequenceNumber,
+        &snapshots, earliest_write_conflict_snapshot, snapshot_checker, env,
+        ShouldReportDetailedTime(env, ioptions.statistics),
+        true /* internal key corruption is not ok */, range_del_agg.get());
     c_iter.SeekToFirst();
     std::string last_user_key;
     for (; c_iter.Valid(); c_iter.Next()) {
@@ -187,65 +187,67 @@ Status BuildTable(
       //    Slice user_key = c_iter.ikey().user_key;
       const ParsedInternalKey &ikey = c_iter.ikey();
       if (ioptions.uni_cache) {
-	if (ioptions.uni_cache->AdaptiveSupported()) {
-	  assert(0); // TODO(fwu): not implemented
-	} else {
-	  auto uni_cache_fix = ioptions.uni_cache;
-	  if (ikey.user_key.ToString() != last_user_key) {
-	    // only handles the newest user_key
-	    // if this key == last user key, discard. becuase cache only store the
-	    // latest one.
-	    IterKey uni_cache_key;
-	    // KV/KP lookup_key = cf_id | seqno | user_key.
-	    // we append the sequence number (incremented by 1 to
-	    // distinguish from 0) only in this case.
+        if (ioptions.uni_cache->AdaptiveSupported()) {
+          assert(0); // TODO(fwu): not implemented
+        } else {
+          UniCacheFix *uni_cache_fix =
+              reinterpret_cast<UniCacheFix *>(ioptions.uni_cache.get());
+          if (ikey.user_key.ToString() != last_user_key) {
+            // only handles the newest user_key
+            // if this key == last user key, discard. becuase cache only store
+            // the latest one.
+            IterKey uni_cache_key;
+            // KV/KP lookup_key = cf_id | seqno | user_key.
+            // we append the sequence number (incremented by 1 to
+            // distinguish from 0) only in this case.
 
-	    // adding cf_id
-	    char encode_buf[10];
-	    auto ptr = EncodeVarint32(encode_buf, column_family_id);
-	    uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
-				     ptr - encode_buf);
-	    // adding seq_no. Note that we only keep the lastest one and do not
-	    // repopulate the cached older version for snapshots.
-	    // TODO(fgwu): adding snapshot support.
-	    uint64_t seq_no = 0;
-	    ptr = EncodeVarint64(encode_buf, seq_no);
-	    uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
-				     ptr - encode_buf);
-	    // adding the key itself
-	    uni_cache_key.TrimAppend(uni_cache_key.Size(), ikey.user_key.data(),
-				     ikey.user_key.size());
-	    switch (ikey.type) {
-	    case kTypeDeletion:
-	    case kTypeSingleDeletion:
-	      uni_cache_fix->Erase(kKV, uni_cache_key.GetUserKey());
-	      uni_cache_fix->Erase(kKP, uni_cache_key.GetUserKey());
-	      break;
-	    case kTypeValue: {
-	      // only populate the key that is already cached.
-	      // TODO(fwu): repopulate KP cache if found in KP cache
-	      if (uni_cache_fix->Lookup(kKV, uni_cache_key.GetUserKey())) {
-		// construct value
-		std::string kv_cache_entry;
-		appendToReplayLog(&kv_cache_entry, ikey.type, value);
-		size_t charge = uni_cache_key.Size() + kv_cache_entry.size() +
-		  sizeof(std::string);
-		void *row_ptr = new std::string(std::move(kv_cache_entry));
-		uni_cache_fix->Insert(kKV, uni_cache_key.GetUserKey(), row_ptr, charge,
-				  level, &DeleteKVEntry); // update if already exist
-	      }
-	      // TODO(fwu): repopulate KP cache if found in KP cache
-	      uni_cache_fix->Erase(kKP, uni_cache_key.GetUserKey());
-	    } break;
-	    default:
-	      /* do nothing. KV cache does not support them */
-	      assert(0); // not implemented.
-	      break;
-	    }
+            // adding cf_id
+            char encode_buf[10];
+            auto ptr = EncodeVarint32(encode_buf, column_family_id);
+            uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                                     ptr - encode_buf);
+            // adding seq_no. Note that we only keep the lastest one and do not
+            // repopulate the cached older version for snapshots.
+            // TODO(fgwu): adding snapshot support.
+            uint64_t seq_no = 0;
+            ptr = EncodeVarint64(encode_buf, seq_no);
+            uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                                     ptr - encode_buf);
+            // adding the key itself
+            uni_cache_key.TrimAppend(uni_cache_key.Size(), ikey.user_key.data(),
+                                     ikey.user_key.size());
+            switch (ikey.type) {
+            case kTypeDeletion:
+            case kTypeSingleDeletion:
+              uni_cache_fix->Erase(kKV, uni_cache_key.GetUserKey());
+              uni_cache_fix->Erase(kKP, uni_cache_key.GetUserKey());
+              break;
+            case kTypeValue: {
+              // only populate the key that is already cached.
+              // TODO(fwu): repopulate KP cache if found in KP cache
+              if (uni_cache_fix->Lookup(kKV, uni_cache_key.GetUserKey())) {
+                // construct value
+                std::string kv_cache_entry;
+                appendToReplayLog(&kv_cache_entry, ikey.type, value);
+                size_t charge = uni_cache_key.Size() + kv_cache_entry.size() +
+                                sizeof(std::string);
+                void *row_ptr = new std::string(std::move(kv_cache_entry));
+                uni_cache_fix->Insert(
+                    kKV, uni_cache_key.GetUserKey(), row_ptr, charge, level,
+                    &DeleteKVEntry); // update if already exist
+              }
+              // TODO(fwu): repopulate KP cache if found in KP cache
+              uni_cache_fix->Erase(kKP, uni_cache_key.GetUserKey());
+            } break;
+            default:
+              /* do nothing. KV cache does not support them */
+              assert(0); // not implemented.
+              break;
+            }
 
-	    last_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
-	  }
-	}
+            last_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
+          }
+        }
       }
 
       // TODO(noetzli): Update stats after flush, too.

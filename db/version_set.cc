@@ -1658,23 +1658,23 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                   bool* key_exists, SequenceNumber* seq, ReadCallback* callback,
                   bool* is_blob) {
   if (cfd_->ioptions()->uni_cache->AdaptiveSupported()) {
-    // GetWithUniCacheAdapt(read_options, k, value, status, merge_context,
-    // 		       max_covering_tombstone_seq, value_found, key_exists, seq,
-    // 		       callback, is_blob);
-    assert(0); // TODO(fwu): not implemented.
+    GetWithUniCacheAdapt(read_options, k, value, status, merge_context,
+                         max_covering_tombstone_seq, value_found, key_exists,
+                         seq, callback, is_blob);
   } else {
     GetWithUniCacheFix(read_options, k, value, status, merge_context,
-		       max_covering_tombstone_seq, value_found, key_exists, seq,
-		       callback, is_blob);
+                       max_covering_tombstone_seq, value_found, key_exists, seq,
+                       callback, is_blob);
   }
 }
 
-void Version::GetWithUniCacheFix(const ReadOptions& read_options, const LookupKey& k,
-                  PinnableSlice* value, Status* status,
-                  MergeContext* merge_context,
-                  SequenceNumber* max_covering_tombstone_seq, bool* value_found,
-                  bool* key_exists, SequenceNumber* seq, ReadCallback* callback,
-                  bool* is_blob) {
+void Version::GetWithUniCacheFix(const ReadOptions &read_options,
+                                 const LookupKey &k, PinnableSlice *value,
+                                 Status *status, MergeContext *merge_context,
+                                 SequenceNumber *max_covering_tombstone_seq,
+                                 bool *value_found, bool *key_exists,
+                                 SequenceNumber *seq, ReadCallback *callback,
+                                 bool *is_blob) {
 
   Slice ikey = k.internal_key();
   Slice user_key = k.user_key();
@@ -1700,7 +1700,8 @@ void Version::GetWithUniCacheFix(const ReadOptions& read_options, const LookupKe
 
   std::string *kv_cache_entry = nullptr;
   FilePointerAndBlockHandle *kp_cache_entry = nullptr;
-  auto uni_cache_fix = cfd_->ioptions()->uni_cache;
+  UniCacheFix *uni_cache_fix =
+      reinterpret_cast<UniCacheFix *>(cfd_->ioptions()->uni_cache.get());
   IterKey uni_cache_key;
   std::string kv_cache_entry_buffer;
   bool kp_cache_entry_found = false;
@@ -1730,16 +1731,17 @@ void Version::GetWithUniCacheFix(const ReadOptions& read_options, const LookupKe
     // adding the key itself
     uni_cache_key.TrimAppend(uni_cache_key.Size(), user_key.data(),
                              user_key.size());
-    if (auto kv_handle = uni_cache_fix->Lookup(kKV, uni_cache_key.GetUserKey())) {
+    if (auto kv_handle =
+            uni_cache_fix->Lookup(kKV, uni_cache_key.GetUserKey())) {
       // Cleanable routine to release the cache entry
       Cleanable value_pinner;
       auto release_cache_entry_func = [](void *cache_to_clean,
                                          void *cache_handle) {
-        ((UniCache *)cache_to_clean)
+        ((UniCacheFix *)cache_to_clean)
             ->Release(kKV, (Cache::Handle *)cache_handle);
       };
-      auto found_kv_cache_entry =
-          static_cast<const std::string *>(uni_cache_fix->Value(kKV, kv_handle));
+      auto found_kv_cache_entry = static_cast<const std::string *>(
+          uni_cache_fix->Value(kKV, kv_handle));
       // If it comes here value is located on the cache.
       // found_row_cache_entry points to the value on cache,
       // and value_pinner has cleanup procedure for the cached entry.
@@ -1748,7 +1750,7 @@ void Version::GetWithUniCacheFix(const ReadOptions& read_options, const LookupKe
       // cleanup routine under value_pinner will be delegated to
       // get_context.pinnable_slice_. Cache entry is released when
       // get_context.pinnable_slice_ is reset.
-      value_pinner.RegisterCleanup(release_cache_entry_func, uni_cache_fix.get(),
+      value_pinner.RegisterCleanup(release_cache_entry_func, uni_cache_fix,
                                    kv_handle);
       replayGetContextLog(*found_kv_cache_entry, user_key, &get_context,
                           &value_pinner);
@@ -1767,7 +1769,8 @@ void Version::GetWithUniCacheFix(const ReadOptions& read_options, const LookupKe
       // if KP cache hit, kp_cache_entry is pointing to a valid FdAndBlockHandle
       // else, kp_cache_entry points to kv_cache_entry_buffer, which can be
       // tested valid by (kv_cache_entry_buffer.block_handle.IsNull() == true)
-      if (auto kp_handle = uni_cache_fix->Lookup(kKP, uni_cache_key.GetUserKey())) {
+      if (auto kp_handle =
+              uni_cache_fix->Lookup(kKP, uni_cache_key.GetUserKey())) {
         kp_cache_entry = static_cast<FilePointerAndBlockHandle *>(
             uni_cache_fix->Value(kKP, kp_handle));
         kp_cache_entry_found = true;
@@ -1885,9 +1888,9 @@ void Version::GetWithUniCacheFix(const ReadOptions& read_options, const LookupKe
               unsigned int level = found_kp_cache_entry_valid
                                        ? kp_cache_entry->file_pointer.level
                                        : fp.GetSavedFileLevel();
-              insert_status =
-                  uni_cache_fix->Insert(kKV, uni_cache_key.GetUserKey(), row_ptr,
-                                    charge, level, &DeleteEntry<std::string>);
+              insert_status = uni_cache_fix->Insert(
+                  kKV, uni_cache_key.GetUserKey(), row_ptr, charge, level,
+                  &DeleteEntry<std::string>);
             }
             // promoted to KV cache, delete the old KP Cache entry.
             // note that we only delete the KP when the KV insertion succeed.
@@ -1905,8 +1908,9 @@ void Version::GetWithUniCacheFix(const ReadOptions& read_options, const LookupKe
               unsigned int level = kp_cache_entry->file_pointer.level;
               void *kp_ptr =
                   new FilePointerAndBlockHandle(std::move(*kp_cache_entry));
-              uni_cache_fix->Insert(kKP, uni_cache_key.GetUserKey(), kp_ptr, charge,
-                                level, &DeleteEntry<FilePointerAndBlockHandle>);
+              uni_cache_fix->Insert(kKP, uni_cache_key.GetUserKey(), kp_ptr,
+                                    charge, level,
+                                    &DeleteEntry<FilePointerAndBlockHandle>);
             }
           }
         }
@@ -1962,14 +1966,15 @@ void Version::GetWithUniCacheFix(const ReadOptions& read_options, const LookupKe
   }
 }
 
-// void Version::GetWithUniCacheAdapt(const ReadOptions& read_options, const LookupKey& k,
-//                   PinnableSlice* value, Status* status,
-//                   MergeContext* merge_context,
-//                   SequenceNumber* max_covering_tombstone_seq, bool* value_found,
-//                   bool* key_exists, SequenceNumber* seq, ReadCallback* callback,
-//                   bool* is_blob) {
-//   assert(0); // TODO(fwu): not implemented yet.
-// }
+void Version::GetWithUniCacheAdapt(
+    const ReadOptions & /*read_options*/, const LookupKey & /*k*/,
+    PinnableSlice * /*value*/, Status * /*status*/,
+    MergeContext * /*merge_context*/,
+    SequenceNumber * /*max_covering_tombstone_seq*/, bool * /*value_found*/,
+    bool * /*key_exists*/, SequenceNumber * /*seq*/,
+    ReadCallback * /*callback*/, bool * /*is_blob*/) {
+  assert(0); // TODO(fwu): not implemented
+}
 
 void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
                        ReadCallback* callback, bool* is_blob) {

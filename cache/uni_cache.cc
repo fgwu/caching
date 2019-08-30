@@ -202,12 +202,10 @@ void UniCacheFix::EraseUnRefEntries() {
   kp_cache_->EraseUnRefEntries();
 }
 
-UniCacheAdapt::UniCacheAdapt(
-    size_t capacity, double kp_cache_ratio, int num_shard_bits,
-    bool strict_capacity_limit,
-    std::shared_ptr<MemoryAllocator> memory_allocator)
-  : UniCacheFix(capacity, kp_cache_ratio, num_shard_bits,
-		strict_capacity_limit, memory_allocator) {}
+size_t UniCacheAdapt::GetCapacity() const {
+  return frequency_real_cache_->GetCapacity() +
+         recency_real_cache_->GetCapacity();
+}
 
 std::shared_ptr<UniCache>
 NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits,
@@ -222,23 +220,6 @@ NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits,
     num_shard_bits = GetDefaultCacheShardBits(capacity);
   }
   return std::make_shared<UniCacheFix>(capacity, kp_cache_ratio, num_shard_bits,
-                                       strict_capacity_limit,
-                                       std::move(memory_allocator));
-}
-
-std::shared_ptr<UniCache>
-NewUniCacheAdapt(size_t capacity, double kp_cache_ratio, int num_shard_bits,
-               bool strict_capacity_limit, double /*high_pri_pool_ratio*/,
-               std::shared_ptr<MemoryAllocator> memory_allocator,
-               bool /*use_adaptive_mutex*/) {
-  if (num_shard_bits >= 20) {
-    return nullptr; // the cache cannot be sharded into too many fine pieces
-  }
-
-  if (num_shard_bits < 0) {
-    num_shard_bits = GetDefaultCacheShardBits(capacity);
-  }
-  return std::make_shared<UniCacheAdapt>(capacity, kp_cache_ratio, num_shard_bits,
                                        strict_capacity_limit,
                                        std::move(memory_allocator));
 }
