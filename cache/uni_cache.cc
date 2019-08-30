@@ -202,6 +202,30 @@ void UniCacheFix::EraseUnRefEntries() {
   kp_cache_->EraseUnRefEntries();
 }
 
+UniCacheAdapt::UniCacheAdapt(
+    size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+    std::shared_ptr<MemoryAllocator> /*memory_allocator*/)
+    : total_capacity_(capacity),
+      target_recency_cache_capacity_(0.5 * capacity) {
+  size_t recency_real_cache_capacity = target_recency_cache_capacity_;
+  size_t frequency_real_cache_capacity =
+      total_capacity_ - recency_real_cache_capacity;
+
+  size_t recency_ghost_cache_capacity = frequency_real_cache_capacity;
+  size_t frequency_ghost_cache_capacity = recency_real_cache_capacity;
+
+  frequency_real_cache_ = NewLRUCache(frequency_real_cache_capacity,
+                                      num_shard_bits, strict_capacity_limit);
+  recency_real_cache_ = NewLRUCache(recency_real_cache_capacity, num_shard_bits,
+                                    strict_capacity_limit);
+
+  // TODO(fwu): reduce the ghost cache memory usage
+  frequency_ghost_cache_ = NewLRUCache(frequency_ghost_cache_capacity,
+                                       num_shard_bits, strict_capacity_limit);
+  recency_ghost_cache_ = NewLRUCache(recency_ghost_cache_capacity,
+                                     num_shard_bits, strict_capacity_limit);
+}
+
 size_t UniCacheAdapt::GetCapacity() const {
   return frequency_real_cache_->GetCapacity() +
          recency_real_cache_->GetCapacity();
@@ -222,6 +246,23 @@ NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits,
   return std::make_shared<UniCacheFix>(capacity, kp_cache_ratio, num_shard_bits,
                                        strict_capacity_limit,
                                        std::move(memory_allocator));
+}
+
+std::shared_ptr<UniCache>
+NewUniCacheAdapt(size_t capacity, int num_shard_bits,
+                 bool strict_capacity_limit, double /*high_pri_pool_ratio*/,
+                 std::shared_ptr<MemoryAllocator> memory_allocator,
+                 bool /*use_adaptive_mutex*/) {
+  if (num_shard_bits >= 20) {
+    return nullptr; // the cache cannot be sharded into too many fine pieces
+  }
+
+  if (num_shard_bits < 0) {
+    num_shard_bits = GetDefaultCacheShardBits(capacity);
+  }
+  return std::make_shared<UniCacheAdapt>(capacity, num_shard_bits,
+                                         strict_capacity_limit,
+                                         std::move(memory_allocator));
 }
 
 } // namespace rocksdb

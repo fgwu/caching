@@ -149,7 +149,8 @@ private:
 
 class UniCacheAdapt : public UniCache {
 public:
-  UniCacheAdapt() {}
+  UniCacheAdapt(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+                std::shared_ptr<MemoryAllocator> memory_allocator = nullptr);
 
   virtual const char *Name() const override { return "UniCacheAdapt"; }
 
@@ -168,7 +169,7 @@ private:
   std::shared_ptr<Cache> recency_ghost_cache_;
 
   size_t total_capacity_;
-  size_t target_kp_cache_capacity_;
+  size_t target_recency_cache_capacity_;
 };
 
 extern std::shared_ptr<UniCache>
@@ -177,5 +178,12 @@ NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits = -1,
                double high_pri_pool_ratio = 0.0,
                std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
                bool use_adaptive_mutex = kDefaultToAdaptiveMutex);
+
+extern std::shared_ptr<UniCache>
+NewUniCacheAdapt(size_t capacity, int num_shard_bits = -1,
+                 bool strict_capacity_limit = false,
+                 double high_pri_pool_ratio = 0.0,
+                 std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+                 bool use_adaptive_mutex = kDefaultToAdaptiveMutex);
 
 } // namespace rocksdb
