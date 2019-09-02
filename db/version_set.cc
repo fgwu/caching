@@ -7,8 +7,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "db/version_set.h"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
+#include "db/version_set.h"
+#include "cache/uni_cache_internal.h"
 #include "compaction/compaction.h"
 #include "db/internal_stats.h"
 #include "db/log_reader.h"
@@ -24,7 +26,6 @@
 #include "monitoring/perf_context_imp.h"
 #include "rocksdb/env.h"
 #include "rocksdb/merge_operator.h"
-#include "rocksdb/uni_cache.h"
 #include "rocksdb/write_buffer_manager.h"
 #include "table/format.h"
 #include "table/get_context.h"
@@ -53,16 +54,6 @@
 #include <vector>
 
 namespace rocksdb {
-
-struct FilePointerAndBlockHandle {
-  // copiable data structure. We will drop the TableReader pointer inside it
-  // as when the cached BlockPointer is found again, the TableReader pointer
-  // may no longer be valid.
-  FilePointer file_pointer;
-  BlockHandle block_handle;
-
-  FilePointerAndBlockHandle() : block_handle(0, 0) {}
-};
 
 namespace {
 
@@ -258,7 +249,7 @@ class FilePicker {
 
   unsigned int GetSavedFileLevel() const { return saved_file_level_; }
 
-  FdWithKeyRange *GetFileFromPointer(FilePointer *file_pointer) {
+  FdWithKeyRange *GetFileFromPointer(const FilePointer *file_pointer) {
     if (file_pointer->level >= num_levels_) {
       return nullptr;
     }
@@ -1657,7 +1648,8 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                   SequenceNumber* max_covering_tombstone_seq, bool* value_found,
                   bool* key_exists, SequenceNumber* seq, ReadCallback* callback,
                   bool* is_blob) {
-  if (cfd_->ioptions()->uni_cache->AdaptiveSupported()) {
+  if (cfd_->ioptions()->uni_cache &&
+      cfd_->ioptions()->uni_cache->AdaptiveSupported()) {
     GetWithUniCacheAdapt(read_options, k, value, status, merge_context,
                          max_covering_tombstone_seq, value_found, key_exists,
                          seq, callback, is_blob);
@@ -1707,6 +1699,7 @@ void Version::GetWithUniCacheFix(const ReadOptions &read_options,
   bool kp_cache_entry_found = false;
   bool found_kp_cache_entry_valid = false;
   FilePointerAndBlockHandle kp_cache_entry_buffer;
+  Cache::Handle *kp_handle = nullptr;
   assert(kp_cache_entry_buffer.block_handle.IsNull());
   if (!merge_operator_ && uni_cache_fix && !get_context.NeedToReadSequence()) {
     // check UniCache
@@ -1769,8 +1762,8 @@ void Version::GetWithUniCacheFix(const ReadOptions &read_options,
       // if KP cache hit, kp_cache_entry is pointing to a valid FdAndBlockHandle
       // else, kp_cache_entry points to kv_cache_entry_buffer, which can be
       // tested valid by (kv_cache_entry_buffer.block_handle.IsNull() == true)
-      if (auto kp_handle =
-              uni_cache_fix->Lookup(kKP, uni_cache_key.GetUserKey())) {
+      if ((kp_handle = uni_cache_fix->Lookup(
+               kKP, uni_cache_key.GetUserKey())) != nullptr) {
         kp_cache_entry = static_cast<FilePointerAndBlockHandle *>(
             uni_cache_fix->Value(kKP, kp_handle));
         kp_cache_entry_found = true;
@@ -1799,6 +1792,7 @@ void Version::GetWithUniCacheFix(const ReadOptions &read_options,
       // file no longer exists, the cache kp is no longer valid. Erase it.
       uni_cache_fix->Erase(kKP, uni_cache_key.GetUserKey());
       kp_cache_entry = &kp_cache_entry_buffer;
+      uni_cache_fix->Release(kKP, kp_handle);
       f = fp.GetNextFile();
       RecordTick(db_statistics_, KP_CACHE_HIT_INVALID);
     }
@@ -1896,6 +1890,7 @@ void Version::GetWithUniCacheFix(const ReadOptions &read_options,
             // note that we only delete the KP when the KV insertion succeed.
             if (found_kp_cache_entry_valid && uni_cache_fix->GetCapacity(kKP) &&
                 uni_cache_fix->GetCapacity(kKV) && insert_status.ok()) {
+              uni_cache_fix->Release(kKP, kp_handle);
               uni_cache_fix->Erase(kKP, uni_cache_key.GetUserKey());
             }
           } else {
@@ -1966,14 +1961,335 @@ void Version::GetWithUniCacheFix(const ReadOptions &read_options,
   }
 }
 
-void Version::GetWithUniCacheAdapt(
-    const ReadOptions & /*read_options*/, const LookupKey & /*k*/,
-    PinnableSlice * /*value*/, Status * /*status*/,
-    MergeContext * /*merge_context*/,
-    SequenceNumber * /*max_covering_tombstone_seq*/, bool * /*value_found*/,
-    bool * /*key_exists*/, SequenceNumber * /*seq*/,
-    ReadCallback * /*callback*/, bool * /*is_blob*/) {
-  assert(0); // TODO(fwu): not implemented
+void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
+                                   const LookupKey &k, PinnableSlice *value,
+                                   Status *status, MergeContext *merge_context,
+                                   SequenceNumber *max_covering_tombstone_seq,
+                                   bool *value_found, bool *key_exists,
+                                   SequenceNumber *seq, ReadCallback *callback,
+                                   bool *is_blob) {
+  Slice ikey = k.internal_key();
+  Slice user_key = k.user_key();
+
+  assert(status->ok() || status->IsMergeInProgress());
+
+  if (key_exists != nullptr) {
+    // will falsify below if not found
+    *key_exists = true;
+  }
+
+  PinnedIteratorsManager pinned_iters_mgr;
+  GetContext get_context(
+      user_comparator(), merge_operator_, info_log_, db_statistics_,
+      status->ok() ? GetContext::kNotFound : GetContext::kMerge, user_key,
+      value, value_found, merge_context, max_covering_tombstone_seq, this->env_,
+      seq, merge_operator_ ? &pinned_iters_mgr : nullptr, callback, is_blob);
+
+  // Pin blocks that we read to hold merge operands
+  if (merge_operator_) {
+    pinned_iters_mgr.StartPinning();
+  }
+
+  // std::string *kv_cache_entry = nullptr;
+  UniCacheAdaptHandle arc_handle;
+  assert(arc_handle.handle == nullptr && arc_handle.state == kBothMiss);
+  const DataEntry *found_data_entry = nullptr;
+  UniCacheAdapt *uni_cache_adapt =
+      reinterpret_cast<UniCacheAdapt *>(cfd_->ioptions()->uni_cache.get());
+  IterKey uni_cache_key;
+
+  if (!merge_operator_ && uni_cache_adapt &&
+      !get_context.NeedToReadSequence()) {
+    // check UniCache
+    // construct uni_cache_lookup_key
+
+    // KV/KP lookup_key = cf_id | seqno | user_key.
+    // we append the sequence number (incremented by 1 to
+    // distinguish from 0) only in this case.
+
+    // adding cf_id
+    uint32_t cf_id = cfd_->GetID();
+    char encode_buf[10];
+    auto ptr = EncodeVarint32(encode_buf, cf_id);
+    uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                             ptr - encode_buf);
+    // adding seq_no
+    uint64_t seq_no =
+        read_options.snapshot == nullptr ? 0 : 1 + GetInternalKeySeqno(ikey);
+    ptr = EncodeVarint64(encode_buf, seq_no);
+    uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                             ptr - encode_buf);
+    // adding the key itself
+    uni_cache_key.TrimAppend(uni_cache_key.Size(), user_key.data(),
+                             user_key.size());
+
+    arc_handle = uni_cache_adapt->Lookup(uni_cache_key.GetUserKey());
+
+    if (arc_handle.handle) {
+      assert(arc_handle.state == kFrequencyRealHit ||
+             arc_handle.state == kRecencyRealHit);
+
+      found_data_entry =
+          static_cast<const DataEntry *>(uni_cache_adapt->Value(arc_handle));
+    }
+  }
+
+  // check if we already get a cached value.
+  if (found_data_entry && found_data_entry->data_type == kKV) {
+    // TODO(fwu): current kKV is only in Frequency, and kKP is only in
+    // Recency. So a kKV is found, meaning it is a FrequencyRealHit,
+    // so nothing else has to be done.
+    // However, when later kKV can be in Recency cache, here we need to
+    // move it from Recency to Frequency.
+    assert(arc_handle.state == kFrequencyRealHit);
+    // Cleanable routine to release the cache entry
+    Cleanable value_pinner;
+    auto release_cache_entry_func = [](void *cache_to_clean,
+                                       void *cache_handle) {
+      ((Cache *)cache_to_clean)->Release((Cache::Handle *)cache_handle);
+    };
+    // If it comes here value is located on the cache.
+    // found_row_cache_entry points to the value on cache,
+    // and value_pinner has cleanup procedure for the cached entry.
+    // After replayGetContextLog() returns, get_context.pinnable_slice_
+    // will point to cache entry buffer (or a copy based on that) and
+    // cleanup routine under value_pinner will be delegated to
+    // get_context.pinnable_slice_. Cache entry is released when
+    // get_context.pinnable_slice_ is reset.
+    value_pinner.RegisterCleanup(release_cache_entry_func,
+                                 uni_cache_adapt->frequency_real_cache(),
+                                 arc_handle.handle);
+    replayGetContextLog(found_data_entry->kv_entry.get_context_replay_log,
+                        user_key, &get_context, &value_pinner);
+
+    if (db_statistics_ != nullptr) {
+      get_context.ReportCounters();
+    }
+    return;
+  }
+
+  FilePicker fp(
+      storage_info_.files_, user_key, ikey, &storage_info_.level_files_brief_,
+      storage_info_.num_non_empty_levels_, &storage_info_.file_indexer_,
+      user_comparator(), internal_comparator());
+  FdWithKeyRange *f = nullptr;
+
+  bool found_kp_entry_valid = false;
+  // check if we get a cached KP
+  if (found_data_entry && found_data_entry->data_type == kKP) {
+    // current only kKP goes to Recency, and kKV goes to kKV
+    assert(arc_handle.state == kRecencyRealHit);
+    assert(!found_data_entry->kp_entry.block_handle.IsNull());
+    if ((f = fp.GetFileFromPointer(&found_data_entry->kp_entry.file_pointer)) !=
+        nullptr) {
+      found_kp_entry_valid = true;
+    } else {
+      // file no longer exists, the cache kp is no longer valid. Erase it.
+      uni_cache_adapt->Erase(uni_cache_key.GetUserKey(), arc_handle.state);
+      found_kp_entry_valid = false;
+    }
+  }
+
+  if (!f) {
+    f = fp.GetNextFile();
+  }
+
+  // prepare buffers to store the KV or KP entry.
+  DataEntry data_entry_buffer;
+  DataEntry *data_entry_to_insert = &data_entry_buffer;
+
+  // determine which EntryType of DataEntry to fill in.
+  // Basic version: recency kKP, frequency kKV.
+  // TODO(fwu): optimization that determine the EntryType
+  switch (arc_handle.state) {
+  case kFrequencyRealHit:
+    data_entry_to_insert = nullptr;
+    break; /* nothing to insert */
+  case kRecencyRealHit:
+  case kFrequencyGhostHit:
+  case kRecencyGhostHit:
+    data_entry_to_insert->data_type = kKV;
+    break;
+  case kBothMiss:
+    data_entry_to_insert->data_type = kKP;
+    break;
+  default:
+    assert(0);
+  }
+
+  // prepare get_context entries for pass in KP or save KV or KP.
+  std::string *kv_cache_entry = nullptr;
+  // make a mutable copy of the cached block_handle, to be able to pass to
+  // the SetBlockHandle function. becaused the cached DataEntry is const,
+  // but the parameter SetBlockHandle takes requires not const.
+  BlockHandle copy_of_block_handle(data_entry_to_insert->data_type == kKP
+                                       ? found_data_entry->kp_entry.block_handle
+                                       : BlockHandle::NullBlockHandle());
+  BlockHandle *block_handle = nullptr;
+
+  if (data_entry_to_insert) {
+    switch (data_entry_to_insert->data_type) {
+    case kKV:
+      kv_cache_entry = &(data_entry_to_insert->kv_entry.get_context_replay_log);
+      if (found_kp_entry_valid) {
+        // passing down the cached KP to speed up the Get.
+        block_handle = &(copy_of_block_handle);
+        assert(!block_handle->IsNull());
+      }
+      break;
+    case kKP:
+      block_handle = &(data_entry_to_insert->kp_entry.block_handle);
+      // a null KP block_handle means a empty buffer to fill.
+      // after return, the KP will be stored in the pointed data struct.
+      assert(block_handle->IsNull());
+      break;
+    default:
+      assert(0);
+    }
+  }
+
+  while (f != nullptr) {
+    if (*max_covering_tombstone_seq > 0) {
+      // The remaining files we look at will only contain covered keys, so we
+      // stop here.
+      break;
+    }
+    if (get_context.sample()) {
+      sample_file_read_inc(f->file_metadata);
+    }
+
+    get_context.SetKVLog(kv_cache_entry); // nullptr if no cache
+
+    // reset kp_cache_entry_buffer. Because in the normal case where
+    // kp cache is not used, the while loop will cycle for several times.
+    // each time the block handle is remembered in kp_cache_entry_buffer.
+    // we should void a new cycle sees a valid block handle. otherwise
+    // the save block handle will be used to fetch block.
+    if (data_entry_buffer.data_type == kKP) {
+      data_entry_buffer.kp_entry.block_handle = BlockHandle::NullBlockHandle();
+    }
+
+    // if the block_handle is not Null, use it
+    // if the block_handle is Null, save the return block iiter
+    get_context.SetBlockHandle(block_handle);
+
+    bool timer_enabled =
+        GetPerfLevel() >= PerfLevel::kEnableTimeExceptForMutex &&
+        get_perf_context()->per_level_perf_context_enabled;
+    StopWatchNano timer(env_, timer_enabled /* auto_start */);
+    *status = table_cache_->Get(
+        read_options, *internal_comparator(), *f->file_metadata, ikey,
+        &get_context, mutable_cf_options_.prefix_extractor.get(),
+        cfd_->internal_stats()->GetFileReadHist(fp.GetHitFileLevel()),
+        IsFilterSkipped(static_cast<int>(fp.GetHitFileLevel()),
+                        fp.IsHitFileLastInLevel()),
+        fp.GetCurrentLevel());
+    // TODO: examine the behavior for corrupted key
+    if (timer_enabled) {
+      PERF_COUNTER_BY_LEVEL_ADD(get_from_table_nanos, timer.ElapsedNanos(),
+                                fp.GetCurrentLevel());
+    }
+    get_context.SetKVLog(nullptr);
+    get_context.SetBlockHandle(nullptr);
+
+    if (!status->ok()) {
+      return;
+    }
+
+    // report the counters before returning
+    if (get_context.State() != GetContext::kNotFound &&
+        get_context.State() != GetContext::kMerge &&
+        db_statistics_ != nullptr) {
+      get_context.ReportCounters();
+    }
+    switch (get_context.State()) {
+    case GetContext::kNotFound:
+      // Keep searching in other files
+      break;
+    case GetContext::kMerge:
+      // TODO: update per-level perfcontext user_key_return_count for kMerge
+      break;
+    case GetContext::kFound:
+      if (fp.GetHitFileLevel() == 0) {
+        RecordTick(db_statistics_, GET_HIT_L0);
+      } else if (fp.GetHitFileLevel() == 1) {
+        RecordTick(db_statistics_, GET_HIT_L1);
+      } else if (fp.GetHitFileLevel() >= 2) {
+        RecordTick(db_statistics_, GET_HIT_L2_AND_UP);
+      }
+
+      if (uni_cache_adapt && data_entry_to_insert) {
+        switch (data_entry_to_insert->data_type) {
+        case kKV:
+          data_entry_to_insert->kv_entry.level =
+              (found_data_entry->data_type == kKP && found_kp_entry_valid)
+                  ? found_data_entry->kp_entry.file_pointer.level
+                  : fp.GetSavedFileLevel();
+          break;
+        case kKP:
+          fp.SaveFilePointer(&data_entry_to_insert->kp_entry.file_pointer);
+          break;
+        default:
+          assert(0);
+        }
+
+        uni_cache_adapt->Release(arc_handle);
+        // note that the content of data_entry_to_insert is moved after
+        // this call.
+        uni_cache_adapt->Insert(uni_cache_key.GetUserKey(),
+                                data_entry_to_insert, arc_handle.state);
+      }
+
+      PERF_COUNTER_BY_LEVEL_ADD(user_key_return_count, 1, fp.GetHitFileLevel());
+      return;
+    case GetContext::kDeleted:
+      // Use empty error message for speed
+      *status = Status::NotFound();
+      return;
+    case GetContext::kCorrupt:
+      *status = Status::Corruption("corrupted key for ", user_key);
+      return;
+    case GetContext::kBlobIndex:
+      ROCKS_LOG_ERROR(info_log_, "Encounter unexpected blob index.");
+      *status = Status::NotSupported(
+          "Encounter unexpected blob index. Please open DB with "
+          "rocksdb::blob_db::BlobDB instead.");
+      return;
+    }
+    if (found_data_entry && found_data_entry->data_type == kKP &&
+        found_kp_entry_valid) {
+      // if kp_cache_entry is valid, it should have return already in the
+      // switch case. The execution should never reach here.
+      assert(0);
+    }
+    f = fp.GetNextFile();
+  }
+
+  if (db_statistics_ != nullptr) {
+    get_context.ReportCounters();
+  }
+  if (GetContext::kMerge == get_context.State()) {
+    if (!merge_operator_) {
+      *status = Status::InvalidArgument(
+          "merge_operator is not properly initialized.");
+      return;
+    }
+    // merge_operands are in saver and we hit the beginning of the key history
+    // do a final merge of nullptr and operands;
+    std::string *str_value = value != nullptr ? value->GetSelf() : nullptr;
+    *status = MergeHelper::TimedFullMerge(
+        merge_operator_, user_key, nullptr, merge_context->GetOperands(),
+        str_value, info_log_, db_statistics_, env_,
+        nullptr /* result_operand */, true);
+    if (LIKELY(value != nullptr)) {
+      value->PinSelf();
+    }
+  } else {
+    if (key_exists != nullptr) {
+      *key_exists = false;
+    }
+    *status = Status::NotFound(); // Use an empty error message for speed
+  }
 }
 
 void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,

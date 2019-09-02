@@ -13,6 +13,7 @@
 #include <deque>
 #include <vector>
 
+#include "cache/uni_cache_internal.h"
 #include "db/compaction/compaction_iterator.h"
 #include "db/dbformat.h"
 #include "db/event_helpers.h"

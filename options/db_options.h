@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "rocksdb/options.h"
-#include "rocksdb/uni_cache.h"
 
 namespace rocksdb {
 

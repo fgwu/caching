@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/db_test_util.h"
+#include "cache/uni_cache_internal.h"
 #include "db/forward_iterator.h"
 #include "rocksdb/env_encryption.h"
 

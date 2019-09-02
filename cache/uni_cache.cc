@@ -1,9 +1,14 @@
-#include "rocksdb/uni_cache.h"
 #include "rocksdb/cache.h"
 
 #include "cache/lru_cache.h"
+#include "cache/uni_cache_internal.h"
 
 namespace rocksdb {
+
+static void DeleteDataEntry(const Slice & /*key*/, void *value) {
+  DataEntry *typed_value = reinterpret_cast<DataEntry *>(value);
+  delete typed_value;
+}
 
 UniCacheFix::UniCacheFix(
     size_t capacity, double kp_cache_ratio, int num_shard_bits,
@@ -224,6 +229,161 @@ UniCacheAdapt::UniCacheAdapt(
                                        num_shard_bits, strict_capacity_limit);
   recency_ghost_cache_ = NewLRUCache(recency_ghost_cache_capacity,
                                      num_shard_bits, strict_capacity_limit);
+}
+
+Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
+                             const UniCacheAdaptArcState &state) {
+  size_t charge = 0;
+  Status s;
+
+  // data_entry: calculate size charge
+  assert(data_entry);
+  switch (data_entry->data_type) {
+  case kKV:
+    assert(!data_entry->kv_entry.get_context_replay_log.empty());
+    charge = key.size() + sizeof(DataEntry) +
+             data_entry->kv_entry.get_context_replay_log.size();
+    break;
+  case kKP:
+    assert(!data_entry->kp_entry.block_handle.IsNull());
+    charge = key.size() + sizeof(DataEntry);
+    break;
+  default:
+    assert(0);
+  }
+
+  void *row_ptr = new DataEntry(std::move(*data_entry));
+
+  // sanity check on the UniCache components
+  assert(frequency_real_cache_->GetCapacity() > 0);
+  assert(recency_real_cache_->GetCapacity() > 0);
+
+  if (state == kFrequencyRealHit) {
+    // cannot reach here
+    assert(0);
+  }
+
+  if (state == kBothMiss) {
+    s = recency_real_cache_->Insert(key, row_ptr, charge, &DeleteDataEntry);
+    if (!s.ok()) {
+      return s;
+    }
+    // TODO(fwu): insert the evicted entry to recency_ghost_cache
+
+    return s;
+  }
+
+  // Now handle kRecencyRealHit, kFreqeuncyGhostHit, kRecencyGhostHit
+  s = frequency_real_cache_->Insert(key, row_ptr, charge, &DeleteDataEntry);
+
+  if (!s.ok()) {
+    return s;
+  }
+
+  // TODO(fwu): insert evicted entry to frequency ghost cache
+
+  switch (state) {
+  case kFrequencyRealHit:
+  case kBothMiss:
+    assert(0);
+    break;
+  case kRecencyRealHit:
+    recency_real_cache_->Erase(key);
+    break;
+  case kFrequencyGhostHit:
+    frequency_ghost_cache_->Erase(key);
+    break;
+  case kRecencyGhostHit:
+    recency_ghost_cache_->Erase(key);
+    break;
+  default: // kBothMiss, kFrequencyRealHit
+    // cannot happen in here.
+    assert(0);
+  }
+  return s;
+}
+
+UniCacheAdaptHandle UniCacheAdapt::Lookup(const Slice &key, Statistics *stats) {
+  Cache::Handle *handle = nullptr;
+
+  if ((handle = frequency_real_cache_->Lookup(key, stats)) != nullptr) {
+    // frequency real hit, no size adjustment needed.
+    return UniCacheAdaptHandle(handle, kFrequencyRealHit);
+  }
+
+  if ((handle = recency_real_cache_->Lookup(key, stats)) != nullptr) {
+    // recency real hit, should move to MRU of frequency real cache
+    // however, promotion is possible. Let the caller to erase from recency real
+    // cache and insert to frequency real cache later.
+    AdjustSize();
+    return UniCacheAdaptHandle(handle, kRecencyRealHit);
+  }
+
+  if ((handle = frequency_ghost_cache_->Lookup(key, stats)) != nullptr) {
+    // frequency ghost hit, no size adjustment needed.
+    // the caller should insert the value to MRU of freq real cache
+    AdjustSize();
+    return UniCacheAdaptHandle(nullptr, kFrequencyGhostHit);
+  }
+
+  if ((handle = recency_ghost_cache_->Lookup(key, stats)) != nullptr) {
+    // recency ghost hit, no size adjustment needed.
+    // the caller should insert the value to MRU of freq real cache
+    AdjustSize();
+    return UniCacheAdaptHandle(nullptr, kRecencyGhostHit);
+  }
+
+  // the caller should insert the value to MRU of recency real cache
+  // no need to adjust sizes.
+  return UniCacheAdaptHandle(nullptr, kBothMiss);
+}
+
+bool UniCacheAdapt::Release(const UniCacheAdaptHandle &arc_handle,
+                            bool force_erase) {
+  switch (arc_handle.state) {
+  case kFrequencyRealHit:
+    return frequency_real_cache_->Release(arc_handle.handle, force_erase);
+  case kRecencyRealHit:
+    return recency_real_cache_->Release(arc_handle.handle, force_erase);
+  case kFrequencyGhostHit:
+  case kRecencyGhostHit:
+  case kBothMiss:
+    assert(0);
+  default:
+    assert(0);
+  }
+}
+
+void *UniCacheAdapt::Value(const UniCacheAdaptHandle &arc_handle) {
+  switch (arc_handle.state) {
+  case kFrequencyRealHit:
+    return frequency_real_cache_->Value(arc_handle.handle);
+  case kRecencyRealHit:
+    return recency_real_cache_->Value(arc_handle.handle);
+  case kFrequencyGhostHit:
+  case kRecencyGhostHit:
+  case kBothMiss:
+    assert(0);
+  default:
+    assert(0);
+  }
+  return nullptr; // cannot reach here.
+}
+
+void UniCacheAdapt::Erase(const Slice &key,
+                          const UniCacheAdaptArcState &state) {
+  switch (state) {
+  case kFrequencyRealHit:
+    return frequency_real_cache_->Erase(key);
+  case kRecencyRealHit:
+    return recency_real_cache_->Erase(key);
+  case kFrequencyGhostHit:
+  case kRecencyGhostHit:
+  case kBothMiss:
+    assert(0);
+  default:
+    assert(0);
+  }
 }
 
 size_t UniCacheAdapt::GetCapacity() const {

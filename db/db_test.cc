@@ -24,6 +24,7 @@
 #endif
 
 #include "cache/lru_cache.h"
+#include "cache/uni_cache_internal.h"
 #include "db/db_impl/db_impl.h"
 #include "db/db_test_util.h"
 #include "db/dbformat.h"
@@ -5999,7 +6000,7 @@ TEST_F(DBTest, RowCache) {
   ASSERT_EQ(TestGetTickerCount(options, ROW_CACHE_MISS), 1);
 }
 
-TEST_F(DBTest, UniCacheKV) {
+TEST_F(DBTest, UniCacheFixKV) {
   Options options = CurrentOptions();
   options.statistics = rocksdb::CreateDBStatistics();
   // set kp_ratio = 0 so all the cache is KV cache
@@ -6036,7 +6037,7 @@ TEST_F(DBTest, UniCacheKV) {
   ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 2);
 }
 
-TEST_F(DBTest, UniCacheKVKP) {
+TEST_F(DBTest, UniCacheFixKVKP) {
   Options options = CurrentOptions();
   options.statistics = rocksdb::CreateDBStatistics();
   options.uni_cache = NewUniCacheFix(8192, 0.5 /*kp_ratio*/);
