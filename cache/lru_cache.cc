@@ -244,7 +244,8 @@ void LRUCacheShard::EvictFromLRU(size_t charge,
   }
 }
 
-void LRUCacheShard::SetCapacity(size_t capacity) {
+void LRUCacheShard::SetCapacity(size_t capacity,
+                                autovector<LRUHandle *> **evicted_handles) {
   autovector<LRUHandle*> last_reference_list;
   {
     MutexLock l(&mutex_);
@@ -252,10 +253,17 @@ void LRUCacheShard::SetCapacity(size_t capacity) {
     high_pri_pool_capacity_ = capacity_ * high_pri_pool_ratio_;
     EvictFromLRU(0, &last_reference_list);
   }
-  // we free the entries here outside of mutex for
-  // performance reasons
-  for (auto entry : last_reference_list) {
-    entry->Free();
+
+  if (evicted_handles) {
+    // save the evicted items if the caller need them.
+    *evicted_handles =
+        new autovector<LRUHandle *>(std::move(last_reference_list));
+  } else {
+    // we free the entries here outside of mutex for
+    // performance reasons
+    for (auto entry : last_reference_list) {
+      entry->Free();
+    }
   }
 }
 
@@ -333,10 +341,11 @@ bool LRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
   return last_reference;
 }
 
-Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
+Status LRUCacheShard::Insert(const Slice &key, uint32_t hash, void *value,
                              size_t charge,
-                             void (*deleter)(const Slice& key, void* value),
-                             Cache::Handle** handle, Cache::Priority priority) {
+                             void (*deleter)(const Slice &key, void *value),
+                             Cache::Handle **handle, Cache::Priority priority,
+                             autovector<LRUHandle *> **evicted_handles) {
   // Allocate the memory here outside of the mutex
   // If the cache is full, we'll have to release it
   // It shouldn't happen very often though.
@@ -402,10 +411,16 @@ Status LRUCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
     }
   }
 
-  // we free the entries here outside of mutex for
-  // performance reasons
-  for (auto entry : last_reference_list) {
-    entry->Free();
+  if (evicted_handles) {
+    // save the evicted items if the caller need them.
+    *evicted_handles =
+        new autovector<LRUHandle *>(std::move(last_reference_list));
+  } else {
+    // we free the entries here outside of mutex for
+    // performance reasons
+    for (auto entry : last_reference_list) {
+      entry->Free();
+    }
   }
 
   return s;

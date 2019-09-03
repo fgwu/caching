@@ -174,7 +174,9 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
   // Separate from constructor so caller can easily make an array of LRUCache
   // if current usage is more than new capacity, the function will attempt to
   // free the needed space
-  virtual void SetCapacity(size_t capacity) override;
+  virtual void
+  SetCapacity(size_t capacity,
+              autovector<LRUHandle *> **evicted_handles = nullptr) override;
 
   // Set the flag to reject insertion if cache if full.
   virtual void SetStrictCapacityLimit(bool strict_capacity_limit) override;
@@ -183,11 +185,11 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
   void SetHighPriorityPoolRatio(double high_pri_pool_ratio);
 
   // Like Cache methods, but with an extra "hash" parameter.
-  virtual Status Insert(const Slice& key, uint32_t hash, void* value,
-                        size_t charge,
-                        void (*deleter)(const Slice& key, void* value),
-                        Cache::Handle** handle,
-                        Cache::Priority priority) override;
+  virtual Status
+  Insert(const Slice &key, uint32_t hash, void *value, size_t charge,
+         void (*deleter)(const Slice &key, void *value), Cache::Handle **handle,
+         Cache::Priority priority,
+         autovector<LRUHandle *> **evicted_handles = nullptr) override;
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) override;
   virtual bool Ref(Cache::Handle* handle) override;
   virtual bool Release(Cache::Handle* handle,

@@ -36,7 +36,6 @@ struct FilePointerAndBlockHandle {
   FilePointerAndBlockHandle() : block_handle(0, 0) {}
 };
 
-
 enum UniCacheAdaptArcState {
   kBothMiss = 0,
   kFrequencyRealHit = 1,
@@ -56,15 +55,11 @@ struct UniCacheAdaptHandle {
 struct ValueLogAndLevel {
   std::string get_context_replay_log;
   int level;
-  ~ValueLogAndLevel() {
-    get_context_replay_log.~basic_string();
-  }
+  ~ValueLogAndLevel() { get_context_replay_log.~basic_string(); }
 
-  ValueLogAndLevel(ValueLogAndLevel&& other) {
-    *this = std::move(other);
-  }
+  ValueLogAndLevel(ValueLogAndLevel &&other) { *this = std::move(other); }
 
-  ValueLogAndLevel& operator=(ValueLogAndLevel&& other) {
+  ValueLogAndLevel &operator=(ValueLogAndLevel &&other) {
     get_context_replay_log = std::move(other.get_context_replay_log);
     level = other.level;
     return *this;
@@ -80,13 +75,11 @@ struct DataEntry {
 
   DataEntry() {}
 
-  DataEntry(DataEntry && other) {
-    *this = std::move(other);
-  }
+  DataEntry(DataEntry &&other) { *this = std::move(other); }
 
-  DataEntry& operator=(DataEntry&& other) {
+  DataEntry &operator=(DataEntry &&other) {
     data_type = other.data_type;
-    switch(data_type) {
+    switch (data_type) {
     case kKV:
       kv_entry = std::move(other.kv_entry);
       break;
@@ -98,7 +91,7 @@ struct DataEntry {
     }
     return *this;
   }
-  
+
   ~DataEntry() {
     if (data_type == kKV) {
       kv_entry.~ValueLogAndLevel();
@@ -178,16 +171,17 @@ public:
   virtual const char *Name() const override { return "UniCacheAdapt"; }
 
   virtual Status Insert(const Slice &uni_key, DataEntry *data_entry,
-                        const UniCacheAdaptArcState& state);
+                        const UniCacheAdaptArcState &state);
 
   virtual UniCacheAdaptHandle Lookup(const Slice &key,
                                      Statistics *stats = nullptr);
 
-  virtual bool Release(const UniCacheAdaptHandle &handle, bool force_erase = false);
+  virtual bool Release(const UniCacheAdaptHandle &handle,
+                       bool force_erase = false);
 
   virtual void *Value(const UniCacheAdaptHandle &arc_handle);
 
-  virtual void Erase(const Slice &key, const UniCacheAdaptArcState& state);
+  virtual void Erase(const Slice &key, const UniCacheAdaptArcState &state);
 
   virtual size_t GetCapacity() const override;
 

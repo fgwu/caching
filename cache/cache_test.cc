@@ -689,6 +689,52 @@ TEST_P(CacheTest, DefaultShardBits) {
   ASSERT_EQ(6, sc->GetNumShardBits());
 }
 
+TEST(CacheShardTest, EvictedItemsTest) {
+  std::shared_ptr<CacheShard> lru_cache_shard = std::make_shared<LRUCacheShard>(
+      10 /*capacity*/, false /*strict_capacity_limit*/,
+      0.0 /*high_pri_pool_ratio*/, kDefaultToAdaptiveMutex);
+
+  std::string key;
+  key = "a";
+  uint32_t hash = 1;
+  char value[10] = "abcdef";
+  autovector<LRUHandle *> *evicted_handles;
+  lru_cache_shard->Insert(key, hash, reinterpret_cast<void *>(value), 5,
+                          dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+                          &evicted_handles);
+  ASSERT_EQ(evicted_handles->size(), 0);
+  delete evicted_handles;
+
+  key = "b";
+  hash = 2;
+  lru_cache_shard->Insert(key, hash, reinterpret_cast<void *>(value), 7,
+                          dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+                          &evicted_handles);
+  ASSERT_EQ(evicted_handles->size(), 1);
+  for (auto entry : *evicted_handles) {
+    entry->Free();
+  }
+  delete evicted_handles;
+
+  ASSERT_EQ(7, lru_cache_shard->GetUsage());
+
+  key = "c";
+  hash = 3;
+  lru_cache_shard->Insert(key, hash, reinterpret_cast<void *>(value), 2,
+                          dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+                          &evicted_handles);
+  ASSERT_EQ(evicted_handles->size(), 0);
+  delete evicted_handles;
+
+  lru_cache_shard->SetCapacity(3, &evicted_handles);
+  ASSERT_EQ(evicted_handles->size(), 1);
+
+  for (auto entry : *evicted_handles) {
+    entry->Free();
+  }
+  delete evicted_handles;
+}
+
 #ifdef SUPPORT_CLOCK_CACHE
 std::shared_ptr<Cache> (*new_clock_cache_func)(size_t, int,
                                                bool) = NewClockCache;
