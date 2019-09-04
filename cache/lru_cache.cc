@@ -426,6 +426,80 @@ Status LRUCacheShard::Insert(const Slice &key, uint32_t hash, void *value,
   return s;
 }
 
+Status LRUCacheShard::Insert(LRUHandle *e /* element to insert */,
+                             Cache::Handle **handle, Cache::Priority priority,
+                             autovector<LRUHandle *> **evicted_handles) {
+  Status s;
+  autovector<LRUHandle *> last_reference_list;
+
+  e->flags = 0;
+  e->refs =
+      (handle == nullptr ? 1
+                         : 2); // One from LRUCache, one for the returned handle
+  e->next = e->prev = nullptr;
+  e->SetInCache(true);
+  e->SetPriority(priority);
+
+  size_t charge = e->charge;
+
+  {
+    MutexLock l(&mutex_);
+
+    // Free the space following strict LRU policy until enough space
+    // is freed or the lru list is empty
+    EvictFromLRU(charge, &last_reference_list);
+
+    if (usage_ - lru_usage_ + charge > capacity_ &&
+        (strict_capacity_limit_ || handle == nullptr)) {
+      if (handle == nullptr) {
+        // Don't insert the entry but still return ok, as if the entry inserted
+        // into cache and get evicted immediately.
+        last_reference_list.push_back(e);
+      } else {
+        delete[] reinterpret_cast<char *>(e);
+        *handle = nullptr;
+        s = Status::Incomplete("Insert failed due to LRU cache being full.");
+      }
+    } else {
+      // insert into the cache
+      // note that the cache might get larger than its capacity if not enough
+      // space was freed
+      LRUHandle *old = table_.Insert(e);
+      usage_ += e->charge;
+      if (old != nullptr) {
+        old->SetInCache(false);
+        if (Unref(old)) {
+          usage_ -= old->charge;
+          // old is on LRU because it's in cache and its reference count
+          // was just 1 (Unref returned 0)
+          LRU_Remove(old);
+          last_reference_list.push_back(old);
+        }
+      }
+      if (handle == nullptr) {
+        LRU_Insert(e);
+      } else {
+        *handle = reinterpret_cast<Cache::Handle *>(e);
+      }
+      s = Status::OK();
+    }
+  }
+
+  if (evicted_handles) {
+    // save the evicted items if the caller need them.
+    *evicted_handles =
+        new autovector<LRUHandle *>(std::move(last_reference_list));
+  } else {
+    // we free the entries here outside of mutex for
+    // performance reasons
+    for (auto entry : last_reference_list) {
+      entry->Free();
+    }
+  }
+
+  return s;
+}
+
 void LRUCacheShard::Erase(const Slice& key, uint32_t hash) {
   LRUHandle* e;
   bool last_reference = false;

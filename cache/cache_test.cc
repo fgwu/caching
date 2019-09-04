@@ -699,6 +699,7 @@ TEST(CacheShardTest, EvictedItemsTest) {
   uint32_t hash = 1;
   char value[10] = "abcdef";
   autovector<LRUHandle *> *evicted_handles;
+  // insert key = "a". Usage = 5
   lru_cache_shard->Insert(key, hash, reinterpret_cast<void *>(value), 5,
                           dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
                           &evicted_handles);
@@ -707,32 +708,52 @@ TEST(CacheShardTest, EvictedItemsTest) {
 
   key = "b";
   hash = 2;
+  // insert key = "b", it will evict key = "a"
+  // we store the evicted "a" in evicted_elem
   lru_cache_shard->Insert(key, hash, reinterpret_cast<void *>(value), 7,
                           dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
                           &evicted_handles);
   ASSERT_EQ(evicted_handles->size(), 1);
-  for (auto entry : *evicted_handles) {
-    entry->Free();
-  }
+
+  LRUHandle *evicted_elem = (*evicted_handles)[0];
+
   delete evicted_handles;
 
   ASSERT_EQ(7, lru_cache_shard->GetUsage());
 
   key = "c";
   hash = 3;
+  // insert key = "c", now cache has two elem:
+  //    key("b") (size=7), key("c") (size=2)
   lru_cache_shard->Insert(key, hash, reinterpret_cast<void *>(value), 2,
                           dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
                           &evicted_handles);
   ASSERT_EQ(evicted_handles->size(), 0);
   delete evicted_handles;
 
-  lru_cache_shard->SetCapacity(3, &evicted_handles);
+  // shrink the capcity to 5, key("b") will be evicted.
+  lru_cache_shard->SetCapacity(5, &evicted_handles);
   ASSERT_EQ(evicted_handles->size(), 1);
 
   for (auto entry : *evicted_handles) {
     entry->Free();
   }
   delete evicted_handles;
+
+  // insert key = "a" again. It will evict key = "c"
+  lru_cache_shard->Insert(evicted_elem, nullptr, Cache::Priority::LOW,
+                          &evicted_handles);
+  ASSERT_EQ(evicted_handles->size(), 1);
+
+  ASSERT_EQ((*evicted_handles)[0]->key(), "c");
+  delete evicted_handles;
+
+  // check if the key("a") was inserted.
+  key = "a";
+  hash = 1;
+  Cache::Handle *result = lru_cache_shard->Lookup(key, hash);
+  ASSERT_NE(result, nullptr);
+  lru_cache_shard->Release(result);
 }
 
 #ifdef SUPPORT_CLOCK_CACHE

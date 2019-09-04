@@ -190,6 +190,12 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
          void (*deleter)(const Slice &key, void *value), Cache::Handle **handle,
          Cache::Priority priority,
          autovector<LRUHandle *> **evicted_handles = nullptr) override;
+
+  virtual Status
+  Insert(LRUHandle *e /* element to insert */, Cache::Handle **handle,
+         Cache::Priority priority,
+         autovector<LRUHandle *> **evicted_handles = nullptr) override;
+
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) override;
   virtual bool Ref(Cache::Handle* handle) override;
   virtual bool Release(Cache::Handle* handle,

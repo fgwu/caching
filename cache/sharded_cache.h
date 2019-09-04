@@ -32,6 +32,11 @@ class CacheShard {
          void (*deleter)(const Slice &key, void *value), Cache::Handle **handle,
          Cache::Priority priority,
          autovector<LRUHandle *> **evicted_handles = nullptr) = 0;
+
+  virtual Status Insert(LRUHandle *e /* element to insert */,
+                        Cache::Handle **handle, Cache::Priority priority,
+                        autovector<LRUHandle *> **evicted_handles) = 0;
+
   virtual Cache::Handle* Lookup(const Slice& key, uint32_t hash) = 0;
   virtual bool Ref(Cache::Handle* handle) = 0;
   virtual bool Release(Cache::Handle* handle, bool force_erase = false) = 0;
