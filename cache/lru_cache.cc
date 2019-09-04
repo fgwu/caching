@@ -244,8 +244,9 @@ void LRUCacheShard::EvictFromLRU(size_t charge,
   }
 }
 
-void LRUCacheShard::SetCapacity(size_t capacity,
-                                autovector<LRUHandle *> **evicted_handles) {
+void LRUCacheShard::SetCapacity(
+    size_t capacity,
+    std::shared_ptr<autovector<LRUHandle *>> *evicted_handles) {
   autovector<LRUHandle*> last_reference_list;
   {
     MutexLock l(&mutex_);
@@ -256,8 +257,8 @@ void LRUCacheShard::SetCapacity(size_t capacity,
 
   if (evicted_handles) {
     // save the evicted items if the caller need them.
-    *evicted_handles =
-        new autovector<LRUHandle *>(std::move(last_reference_list));
+    evicted_handles->reset(
+        new autovector<LRUHandle *>(std::move(last_reference_list)));
   } else {
     // we free the entries here outside of mutex for
     // performance reasons
@@ -341,11 +342,11 @@ bool LRUCacheShard::Release(Cache::Handle* handle, bool force_erase) {
   return last_reference;
 }
 
-Status LRUCacheShard::Insert(const Slice &key, uint32_t hash, void *value,
-                             size_t charge,
-                             void (*deleter)(const Slice &key, void *value),
-                             Cache::Handle **handle, Cache::Priority priority,
-                             autovector<LRUHandle *> **evicted_handles) {
+Status LRUCacheShard::Insert(
+    const Slice &key, uint32_t hash, void *value, size_t charge,
+    void (*deleter)(const Slice &key, void *value), Cache::Handle **handle,
+    Cache::Priority priority,
+    std::shared_ptr<autovector<LRUHandle *>> *evicted_handles) {
   // Allocate the memory here outside of the mutex
   // If the cache is full, we'll have to release it
   // It shouldn't happen very often though.
@@ -413,8 +414,8 @@ Status LRUCacheShard::Insert(const Slice &key, uint32_t hash, void *value,
 
   if (evicted_handles) {
     // save the evicted items if the caller need them.
-    *evicted_handles =
-        new autovector<LRUHandle *>(std::move(last_reference_list));
+    evicted_handles->reset(
+        new autovector<LRUHandle *>(std::move(last_reference_list)));
   } else {
     // we free the entries here outside of mutex for
     // performance reasons
@@ -426,9 +427,10 @@ Status LRUCacheShard::Insert(const Slice &key, uint32_t hash, void *value,
   return s;
 }
 
-Status LRUCacheShard::Insert(LRUHandle *e /* element to insert */,
-                             Cache::Handle **handle, Cache::Priority priority,
-                             autovector<LRUHandle *> **evicted_handles) {
+Status LRUCacheShard::Insert(
+    LRUHandle *e /* element to insert */, Cache::Handle **handle,
+    Cache::Priority priority,
+    std::shared_ptr<autovector<LRUHandle *>> *evicted_handles) {
   Status s;
   autovector<LRUHandle *> last_reference_list;
 
@@ -487,8 +489,8 @@ Status LRUCacheShard::Insert(LRUHandle *e /* element to insert */,
 
   if (evicted_handles) {
     // save the evicted items if the caller need them.
-    *evicted_handles =
-        new autovector<LRUHandle *>(std::move(last_reference_list));
+    evicted_handles->reset(
+        new autovector<LRUHandle *>(std::move(last_reference_list)));
   } else {
     // we free the entries here outside of mutex for
     // performance reasons

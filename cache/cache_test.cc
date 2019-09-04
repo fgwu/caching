@@ -698,13 +698,12 @@ TEST(CacheShardTest, EvictedItemsTest) {
   key = "a";
   uint32_t hash = 1;
   char value[10] = "abcdef";
-  autovector<LRUHandle *> *evicted_handles;
+  std::shared_ptr<autovector<LRUHandle *>> evicted_handles;
   // insert key = "a". Usage = 5
   lru_cache_shard->Insert(key, hash, reinterpret_cast<void *>(value), 5,
                           dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
                           &evicted_handles);
   ASSERT_EQ(evicted_handles->size(), 0);
-  delete evicted_handles;
 
   key = "b";
   hash = 2;
@@ -717,8 +716,6 @@ TEST(CacheShardTest, EvictedItemsTest) {
 
   LRUHandle *evicted_elem = (*evicted_handles)[0];
 
-  delete evicted_handles;
-
   ASSERT_EQ(7, lru_cache_shard->GetUsage());
 
   key = "c";
@@ -729,7 +726,6 @@ TEST(CacheShardTest, EvictedItemsTest) {
                           dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
                           &evicted_handles);
   ASSERT_EQ(evicted_handles->size(), 0);
-  delete evicted_handles;
 
   // shrink the capcity to 5, key("b") will be evicted.
   lru_cache_shard->SetCapacity(5, &evicted_handles);
@@ -738,15 +734,16 @@ TEST(CacheShardTest, EvictedItemsTest) {
   for (auto entry : *evicted_handles) {
     entry->Free();
   }
-  delete evicted_handles;
 
   // insert key = "a" again. It will evict key = "c"
   lru_cache_shard->Insert(evicted_elem, nullptr, Cache::Priority::LOW,
                           &evicted_handles);
   ASSERT_EQ(evicted_handles->size(), 1);
-
   ASSERT_EQ((*evicted_handles)[0]->key(), "c");
-  delete evicted_handles;
+
+  for (auto entry : *evicted_handles) {
+    entry->Free();
+  }
 
   // check if the key("a") was inserted.
   key = "a";
