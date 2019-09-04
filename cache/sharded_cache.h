@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #pragma once
+#pragma GCC diagnostic ignored "-Woverloaded-virtual"
 
 #include <atomic>
 #include <string>
@@ -93,16 +94,16 @@ class ShardedCache : public Cache {
 
   int GetNumShardBits() const { return num_shard_bits_; }
 
- private:
+protected:
   static inline uint32_t HashSlice(const Slice& s) {
     return static_cast<uint32_t>(GetSliceNPHash64(s));
   }
-
   uint32_t Shard(uint32_t hash) {
     // Note, hash >> 32 yields hash in gcc, not the zero we expect!
     return (num_shard_bits_ > 0) ? (hash >> (32 - num_shard_bits_)) : 0;
   }
 
+private:
   int num_shard_bits_;
   mutable port::Mutex capacity_mutex_;
   size_t capacity_;

@@ -584,6 +584,17 @@ const CacheShard* LRUCache::GetShard(int shard) const {
   return reinterpret_cast<CacheShard*>(&shards_[shard]);
 }
 
+Status
+LRUCache::Insert(const Slice &key, void *value, size_t charge,
+                 void (*deleter)(const Slice &key, void *value),
+                 Handle **handle, Priority priority,
+                 std::shared_ptr<autovector<LRUHandle *>> *evicted_handles) {
+  uint32_t hash = HashSlice(key);
+  return GetShard(Shard(hash))
+      ->Insert(key, hash, value, charge, deleter, handle, priority,
+               evicted_handles);
+}
+
 void* LRUCache::Value(Handle* handle) {
   return reinterpret_cast<const LRUHandle*>(handle)->value;
 }

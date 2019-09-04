@@ -689,6 +689,33 @@ TEST_P(CacheTest, DefaultShardBits) {
   ASSERT_EQ(6, sc->GetNumShardBits());
 }
 
+TEST_P(CacheTest, LRUEvictedItem) {
+  // cache is std::shared_ptr and will be automatically cleaned up.
+  auto cache = NewLRUCache(10, 0, false);
+  auto lru_cache = reinterpret_cast<LRUCache *>(cache.get());
+  std::string key;
+  key = "a";
+  char value[10] = "abcdef";
+  std::shared_ptr<autovector<LRUHandle *>> evicted_handles;
+  // insert key = "a". Usage = 5
+  lru_cache->Insert(key, reinterpret_cast<void *>(value), 5, dumbDeleter,
+                    nullptr /*handle*/, Cache::Priority::LOW, &evicted_handles);
+  ASSERT_EQ(evicted_handles->size(), 0);
+
+  key = "b";
+  // insert key = "b", it will evict key = "a"
+  // we store the evicted "a" in evicted_elem
+  lru_cache->Insert(key, reinterpret_cast<void *>(value), 7, dumbDeleter,
+                    nullptr /*handle*/, Cache::Priority::LOW, &evicted_handles);
+  ASSERT_EQ(evicted_handles->size(), 1);
+
+  LRUHandle *evicted_elem = (*evicted_handles)[0];
+  ASSERT_EQ(evicted_elem->key(), "a");
+  evicted_elem->Free();
+
+  ASSERT_EQ(7, lru_cache->GetUsage());
+}
+
 TEST(CacheShardTest, EvictedItemsTest) {
   std::shared_ptr<CacheShard> lru_cache_shard = std::make_shared<LRUCacheShard>(
       10 /*capacity*/, false /*strict_capacity_limit*/,
