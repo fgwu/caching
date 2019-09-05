@@ -353,6 +353,7 @@ UniCacheAdaptHandle UniCacheAdapt::Lookup(const Slice &key, Statistics *stats) {
     // frequency ghost hit, no size adjustment needed.
     // the caller should insert the value to MRU of freq real cache
     AdjustSize();
+    frequency_ghost_cache_->Release(handle);
     return UniCacheAdaptHandle(nullptr, kFrequencyGhostHit);
   }
 
@@ -360,6 +361,7 @@ UniCacheAdaptHandle UniCacheAdapt::Lookup(const Slice &key, Statistics *stats) {
     // recency ghost hit, no size adjustment needed.
     // the caller should insert the value to MRU of freq real cache
     AdjustSize();
+    recency_ghost_cache_->Release(handle);
     return UniCacheAdaptHandle(nullptr, kRecencyGhostHit);
   }
 
@@ -377,6 +379,9 @@ bool UniCacheAdapt::Release(const UniCacheAdaptHandle &arc_handle,
     return recency_real_cache_->Release(arc_handle.handle, force_erase);
   case kFrequencyGhostHit:
   case kRecencyGhostHit:
+    // we do not have to release any resource, as ghost cache entry
+    // has released at Lookup() already.
+    return true;
   case kBothMiss:
     assert(0);
   default:

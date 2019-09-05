@@ -40,17 +40,17 @@ struct FilePointerAndBlockHandle {
 struct ValueLogAndLevel {
   std::string get_context_replay_log;
   int level;
-  ValueLogAndLevel() {}
-  ValueLogAndLevel(ValueLogAndLevel &&other) { *this = std::move(other); }
-  ~ValueLogAndLevel() { get_context_replay_log.~basic_string(); }
+  // ValueLogAndLevel() {}
+  // ValueLogAndLevel(ValueLogAndLevel &&other) { *this = std::move(other); }
+  // ~ValueLogAndLevel() { get_context_replay_log.~basic_string(); }
 
-  ValueLogAndLevel &operator=(ValueLogAndLevel &&other) {
-    // get_context_replay_log = std::move(other.get_context_replay_log);
-    // level = other.level;
-    std::swap(get_context_replay_log, other.get_context_replay_log);
-    std::swap(level, other.level);
-    return *this;
-  }
+  // ValueLogAndLevel &operator=(ValueLogAndLevel &&other) {
+  //   // get_context_replay_log = std::move(other.get_context_replay_log);
+  //   // level = other.level;
+  //   std::swap(get_context_replay_log, other.get_context_replay_log);
+  //   std::swap(level, other.level);
+  //   return *this;
+  // }
 };
 
 struct DataEntry {
@@ -58,30 +58,30 @@ struct DataEntry {
   ValueLogAndLevel kv_entry;
   FilePointerAndBlockHandle kp_entry;
 
-  DataEntry() {}
+  // DataEntry() {}
 
-  DataEntry(DataEntry &&other) { *this = std::move(other); }
+  // DataEntry(DataEntry &&other) { *this = std::move(other); }
 
-  DataEntry &operator=(DataEntry &&other) {
-    data_type = other.data_type;
-    switch (data_type) {
-    case kKV:
-      kv_entry = std::move(other.kv_entry);
-      break;
-    case kKP:
-      kp_entry = std::move(other.kp_entry);
-      break;
-    default:
-      assert(0);
-    }
-    return *this;
-  }
+  // DataEntry &operator=(DataEntry &&other) {
+  //   data_type = other.data_type;
+  //   switch (data_type) {
+  //   case kKV:
+  //     kv_entry = std::move(other.kv_entry);
+  //     break;
+  //   case kKP:
+  //     kp_entry = std::move(other.kp_entry);
+  //     break;
+  //   default:
+  //     assert(0);
+  //   }
+  //   return *this;
+  // }
 
-  ~DataEntry() {
-    if (data_type == kKV) {
-      kv_entry.~ValueLogAndLevel();
-    }
-  }
+  // ~DataEntry() {
+  //   if (data_type == kKV) {
+  //     kv_entry.~ValueLogAndLevel();
+  //   }
+  // }
 };
 
 enum UniCacheAdaptArcState {
