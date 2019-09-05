@@ -257,12 +257,12 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
   assert(data_entry);
   switch (data_entry->data_type) {
   case kKV:
-    assert(!data_entry->kv_entry.get_context_replay_log.empty());
+    assert(!data_entry->kv_entry()->get_context_replay_log.empty());
     charge = key.size() + sizeof(DataEntry) +
-             data_entry->kv_entry.get_context_replay_log.size();
+             data_entry->kv_entry()->get_context_replay_log.size();
     break;
   case kKP:
-    assert(!data_entry->kp_entry.block_handle.IsNull());
+    assert(!data_entry->kp_entry()->block_handle.IsNull());
     charge = key.size() + sizeof(DataEntry);
     break;
   default:
@@ -274,7 +274,7 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
   // sanity check on the UniCache components
   assert(frequency_real_cache_->GetCapacity() > 0);
   assert(recency_real_cache_->GetCapacity() > 0);
-  
+
   std::shared_ptr<autovector<LRUHandle *>> evicted_handles;
   if (state == kBothMiss) {
     s = recency_real_cache_->Insert(key, row_ptr, charge, &DeleteDataEntry,

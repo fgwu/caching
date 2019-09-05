@@ -793,17 +793,17 @@ public:
                   const UniCacheAdaptArcState &state) {
     std::string value(value_size, 'a');
     std::shared_ptr<DataEntry> entry = std::make_shared<DataEntry>();
-    entry->data_type = kKV;
-    entry->kv_entry.level = 1;
-    //    entry->kv_entry.get_context_replay_log.assign(std::move(value));
-    entry->kv_entry.get_context_replay_log = value;
+    entry->InitNew(kKV);
+    entry->kv_entry()->level = 1;
+    //    entry->kv_entry()->get_context_replay_log.assign(std::move(value));
+    entry->kv_entry()->get_context_replay_log.assign(std::move(value));
     return cache_->Insert(key, entry.get(), state);
   }
 
   Status InsertKP(const Slice &key, const UniCacheAdaptArcState &state) {
     std::shared_ptr<DataEntry> entry = std::make_shared<DataEntry>();
-    entry->data_type = kKP;
-    entry->kp_entry.block_handle = BlockHandle(1, 1);
+    entry->InitNew(kKP);
+    entry->kp_entry()->block_handle = BlockHandle(1, 1);
     return cache_->Insert(key, entry.get(), state);
   }
 
@@ -816,6 +816,15 @@ public:
     return cache_->Release(arc_handle, force_erase);
   }
 };
+
+TEST_F(UniCacheAdaptTest, BasicTest) {
+  UniCacheAdaptArcState s = kBothMiss;
+  // first appearance,insert to RecencyRealCache
+  ASSERT_OK(InsertKV("a", 3, s));
+  UniCacheAdaptHandle h = Lookup("a");
+  ASSERT_EQ(h.state, kRecencyRealHit);
+  Release(h);
+}
 
 TEST_F(UniCacheAdaptTest, RecencyRealPromoteToFrequencyReal) {
   UniCacheAdaptArcState s = kBothMiss;

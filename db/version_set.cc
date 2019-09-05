@@ -2059,7 +2059,7 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
     value_pinner.RegisterCleanup(release_cache_entry_func,
                                  uni_cache_adapt->frequency_real_cache(),
                                  arc_handle.handle);
-    replayGetContextLog(found_data_entry->kv_entry.get_context_replay_log,
+    replayGetContextLog(found_data_entry->kv_entry()->get_context_replay_log,
                         user_key, &get_context, &value_pinner);
 
     if (db_statistics_ != nullptr) {
@@ -2079,9 +2079,9 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
   if (found_data_entry && found_data_entry->data_type == kKP) {
     // current only kKP goes to Recency, and kKV goes to kKV
     assert(arc_handle.state == kRecencyRealHit);
-    assert(!found_data_entry->kp_entry.block_handle.IsNull());
-    if ((f = fp.GetFileFromPointer(&found_data_entry->kp_entry.file_pointer)) !=
-        nullptr) {
+    assert(!found_data_entry->kp_entry()->block_handle.IsNull());
+    if ((f = fp.GetFileFromPointer(
+             &found_data_entry->kp_entry()->file_pointer)) != nullptr) {
       found_kp_entry_valid = true;
     } else {
       // file no longer exists, the cache kp is no longer valid. Erase it.
@@ -2122,15 +2122,17 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
   // make a mutable copy of the cached block_handle, to be able to pass to
   // the SetBlockHandle function. becaused the cached DataEntry is const,
   // but the parameter SetBlockHandle takes requires not const.
-  BlockHandle copy_of_block_handle(data_entry_to_insert->data_type == kKP
-                                       ? found_data_entry->kp_entry.block_handle
-                                       : BlockHandle::NullBlockHandle());
+  BlockHandle copy_of_block_handle(
+      data_entry_to_insert->data_type == kKP
+          ? found_data_entry->kp_entry()->block_handle
+          : BlockHandle::NullBlockHandle());
   BlockHandle *block_handle = nullptr;
 
   if (data_entry_to_insert) {
     switch (data_entry_to_insert->data_type) {
     case kKV:
-      kv_cache_entry = &(data_entry_to_insert->kv_entry.get_context_replay_log);
+      kv_cache_entry =
+          &(data_entry_to_insert->kv_entry()->get_context_replay_log);
       if (found_kp_entry_valid) {
         // passing down the cached KP to speed up the Get.
         block_handle = &(copy_of_block_handle);
@@ -2138,7 +2140,7 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
       }
       break;
     case kKP:
-      block_handle = &(data_entry_to_insert->kp_entry.block_handle);
+      block_handle = &(data_entry_to_insert->kp_entry()->block_handle);
       // a null KP block_handle means a empty buffer to fill.
       // after return, the KP will be stored in the pointed data struct.
       assert(block_handle->IsNull());
@@ -2166,7 +2168,8 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
     // we should void a new cycle sees a valid block handle. otherwise
     // the save block handle will be used to fetch block.
     if (data_entry_buffer.data_type == kKP) {
-      data_entry_buffer.kp_entry.block_handle = BlockHandle::NullBlockHandle();
+      data_entry_buffer.kp_entry()->block_handle =
+          BlockHandle::NullBlockHandle();
     }
 
     // if the block_handle is not Null, use it
@@ -2221,13 +2224,13 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
       if (uni_cache_adapt && data_entry_to_insert) {
         switch (data_entry_to_insert->data_type) {
         case kKV:
-          data_entry_to_insert->kv_entry.level =
+          data_entry_to_insert->kv_entry()->level =
               (found_data_entry->data_type == kKP && found_kp_entry_valid)
-                  ? found_data_entry->kp_entry.file_pointer.level
+                  ? found_data_entry->kp_entry()->file_pointer.level
                   : fp.GetSavedFileLevel();
           break;
         case kKP:
-          fp.SaveFilePointer(&data_entry_to_insert->kp_entry.file_pointer);
+          fp.SaveFilePointer(&data_entry_to_insert->kp_entry()->file_pointer);
           break;
         default:
           assert(0);

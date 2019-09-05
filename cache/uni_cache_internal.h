@@ -9,7 +9,7 @@ namespace rocksdb {
 
 /* Universal Cache */
 
-enum UniCacheEntryType { kKV = 0, kKP = 1, kKVR = 2, kKPR = 3 };
+enum UniCacheEntryType { kNotSet = 0, kKV = 1, kKP = 2, kKVR = 3, kKPR = 4 };
 
 struct UniCacheKey {
   Slice key;
@@ -40,48 +40,75 @@ struct FilePointerAndBlockHandle {
 struct ValueLogAndLevel {
   std::string get_context_replay_log;
   int level;
-  // ValueLogAndLevel() {}
-  // ValueLogAndLevel(ValueLogAndLevel &&other) { *this = std::move(other); }
-  // ~ValueLogAndLevel() { get_context_replay_log.~basic_string(); }
-
-  // ValueLogAndLevel &operator=(ValueLogAndLevel &&other) {
-  //   // get_context_replay_log = std::move(other.get_context_replay_log);
-  //   // level = other.level;
-  //   std::swap(get_context_replay_log, other.get_context_replay_log);
-  //   std::swap(level, other.level);
-  //   return *this;
-  // }
 };
 
 struct DataEntry {
   UniCacheEntryType data_type;
-  ValueLogAndLevel kv_entry;
-  FilePointerAndBlockHandle kp_entry;
+  void *entry;
 
-  // DataEntry() {}
+  DataEntry() : data_type(kNotSet), entry(nullptr) {}
 
-  // DataEntry(DataEntry &&other) { *this = std::move(other); }
+  ~DataEntry() {
+    switch (data_type) {
+    case kKV:
+      if (entry) {
+        delete (reinterpret_cast<ValueLogAndLevel *>(entry));
+      }
+      entry = nullptr;
+      break;
+    case kKP:
+      if (entry) {
+        delete (reinterpret_cast<FilePointerAndBlockHandle *>(entry));
+      }
+      entry = nullptr;
+      break;
+    default:
+      assert(0);
+    }
+  }
 
-  // DataEntry &operator=(DataEntry &&other) {
-  //   data_type = other.data_type;
-  //   switch (data_type) {
-  //   case kKV:
-  //     kv_entry = std::move(other.kv_entry);
-  //     break;
-  //   case kKP:
-  //     kp_entry = std::move(other.kp_entry);
-  //     break;
-  //   default:
-  //     assert(0);
-  //   }
-  //   return *this;
-  // }
+  ValueLogAndLevel *kv_entry() {
+    assert(data_type == kKV);
+    return reinterpret_cast<ValueLogAndLevel *>(entry);
+  }
 
-  // ~DataEntry() {
-  //   if (data_type == kKV) {
-  //     kv_entry.~ValueLogAndLevel();
-  //   }
-  // }
+  const ValueLogAndLevel *kv_entry() const {
+    assert(data_type == kKV);
+    return reinterpret_cast<ValueLogAndLevel *>(entry);
+  }
+
+  FilePointerAndBlockHandle *kp_entry() {
+    assert(data_type == kKV);
+    return reinterpret_cast<FilePointerAndBlockHandle *>(entry);
+  }
+
+  const FilePointerAndBlockHandle *kp_entry() const {
+    assert(data_type == kKV);
+    return reinterpret_cast<FilePointerAndBlockHandle *>(entry);
+  }
+
+  void InitNew(UniCacheEntryType _data_type) {
+    data_type = _data_type;
+    switch (data_type) {
+    case kKV:
+      entry = new ValueLogAndLevel();
+      break;
+    case kKP:
+      entry = new FilePointerAndBlockHandle();
+      break;
+    default:
+      assert(0);
+    }
+  }
+
+  DataEntry(DataEntry &&other) { *this = std::move(other); }
+
+  DataEntry &operator=(DataEntry &&other) {
+    data_type = other.data_type;
+    entry = other.entry;
+    other.entry = nullptr;
+    return *this;
+  }
 };
 
 enum UniCacheAdaptArcState {
