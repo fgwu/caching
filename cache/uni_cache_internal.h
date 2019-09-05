@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cache/lru_cache.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/uni_cache.h"
 #include "table/format.h"
@@ -36,42 +37,26 @@ struct FilePointerAndBlockHandle {
   FilePointerAndBlockHandle() : block_handle(0, 0) {}
 };
 
-enum UniCacheAdaptArcState {
-  kBothMiss = 0,
-  kFrequencyRealHit = 1,
-  kRecencyRealHit = 2,
-  kFrequencyGhostHit = 3,
-  kRecencyGhostHit = 4,
-};
-
-struct UniCacheAdaptHandle {
-  Cache::Handle *handle;
-  UniCacheAdaptArcState state;
-  UniCacheAdaptHandle() : handle(nullptr), state(kBothMiss) {}
-  UniCacheAdaptHandle(Cache::Handle *h, UniCacheAdaptArcState s)
-      : handle(h), state(s) {}
-};
-
 struct ValueLogAndLevel {
   std::string get_context_replay_log;
   int level;
+  ValueLogAndLevel() {}
+  ValueLogAndLevel(ValueLogAndLevel &&other) { *this = std::move(other); }
   ~ValueLogAndLevel() { get_context_replay_log.~basic_string(); }
 
-  ValueLogAndLevel(ValueLogAndLevel &&other) { *this = std::move(other); }
-
   ValueLogAndLevel &operator=(ValueLogAndLevel &&other) {
-    get_context_replay_log = std::move(other.get_context_replay_log);
-    level = other.level;
+    // get_context_replay_log = std::move(other.get_context_replay_log);
+    // level = other.level;
+    std::swap(get_context_replay_log, other.get_context_replay_log);
+    std::swap(level, other.level);
     return *this;
   }
 };
 
 struct DataEntry {
   UniCacheEntryType data_type;
-  union {
-    ValueLogAndLevel kv_entry;
-    FilePointerAndBlockHandle kp_entry;
-  };
+  ValueLogAndLevel kv_entry;
+  FilePointerAndBlockHandle kp_entry;
 
   DataEntry() {}
 
@@ -97,6 +82,22 @@ struct DataEntry {
       kv_entry.~ValueLogAndLevel();
     }
   }
+};
+
+enum UniCacheAdaptArcState {
+  kBothMiss = 0,
+  kFrequencyRealHit = 1,
+  kRecencyRealHit = 2,
+  kFrequencyGhostHit = 3,
+  kRecencyGhostHit = 4,
+};
+
+struct UniCacheAdaptHandle {
+  Cache::Handle *handle;
+  UniCacheAdaptArcState state;
+  UniCacheAdaptHandle() : handle(nullptr), state(kBothMiss) {}
+  UniCacheAdaptHandle(Cache::Handle *h, UniCacheAdaptArcState s)
+      : handle(h), state(s) {}
 };
 
 class UniCacheFix : public UniCache {
@@ -193,13 +194,14 @@ public:
 
 private:
   // the size is adjusted after each ghost hit.
-  void AdjustSize() { assert(0); /*TODO(fwu)*/ }
+  void AdjustSize() { /*assert(0); TODO(fwu)*/
+  }
 
-  std::shared_ptr<Cache> frequency_real_cache_;
-  std::shared_ptr<Cache> recency_real_cache_;
+  std::shared_ptr<LRUCache> frequency_real_cache_;
+  std::shared_ptr<LRUCache> recency_real_cache_;
 
-  std::shared_ptr<Cache> frequency_ghost_cache_;
-  std::shared_ptr<Cache> recency_ghost_cache_;
+  std::shared_ptr<LRUCache> frequency_ghost_cache_;
+  std::shared_ptr<LRUCache> recency_ghost_cache_;
 
   size_t total_capacity_;
   size_t target_recency_cache_capacity_;

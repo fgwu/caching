@@ -11,6 +11,7 @@
 
 #include "cache/clock_cache.h"
 #include "cache/lru_cache.h"
+#include "cache/uni_cache_internal.h"
 #include "test_util/testharness.h"
 #include "util/coding.h"
 #include "util/string_util.h"
@@ -778,6 +779,68 @@ TEST(CacheShardTest, EvictedItemsTest) {
   Cache::Handle *result = lru_cache_shard->Lookup(key, hash);
   ASSERT_NE(result, nullptr);
   lru_cache_shard->Release(result);
+}
+
+class UniCacheAdaptTest : public testing::Test {
+public:
+  std::shared_ptr<UniCache> uni_cache_;
+  UniCacheAdapt *cache_;
+  UniCacheAdaptTest()
+      : uni_cache_(NewUniCacheAdapt(4096)),
+        cache_(reinterpret_cast<UniCacheAdapt *>(uni_cache_.get())) {}
+
+  Status InsertKV(const Slice &key, size_t value_size,
+                  const UniCacheAdaptArcState &state) {
+    std::string value(value_size, 'a');
+    std::shared_ptr<DataEntry> entry = std::make_shared<DataEntry>();
+    entry->data_type = kKV;
+    entry->kv_entry.level = 1;
+    //    entry->kv_entry.get_context_replay_log.assign(std::move(value));
+    entry->kv_entry.get_context_replay_log = value;
+    return cache_->Insert(key, entry.get(), state);
+  }
+
+  Status InsertKP(const Slice &key, const UniCacheAdaptArcState &state) {
+    std::shared_ptr<DataEntry> entry = std::make_shared<DataEntry>();
+    entry->data_type = kKP;
+    entry->kp_entry.block_handle = BlockHandle(1, 1);
+    return cache_->Insert(key, entry.get(), state);
+  }
+
+  UniCacheAdaptHandle Lookup(const Slice &key, Statistics *stats = nullptr) {
+    return cache_->Lookup(key, stats);
+  }
+
+  bool Release(const UniCacheAdaptHandle &arc_handle,
+               bool force_erase = false) {
+    return cache_->Release(arc_handle, force_erase);
+  }
+};
+
+TEST_F(UniCacheAdaptTest, RecencyRealPromoteToFrequencyReal) {
+  {
+    UniCacheAdaptArcState s = kBothMiss;
+    // first appearance,insert to RecencyRealCache
+    ASSERT_OK(InsertKV("a", 3, s));
+    UniCacheAdaptHandle h = Lookup("a");
+    ASSERT_EQ(h.state, kRecencyRealHit);
+    Release(h);
+    
+    // caller insert the item back again, using the last status
+    // this time it will be removed from RecencyRealCache to
+    // FrequencyRealCache
+    ASSERT_OK(InsertKV("a", 3, h.state));
+    h = Lookup("a");
+    ASSERT_EQ(h.state, kFrequencyRealHit);
+    Release(h);
+
+    // caller insert the item back yet again
+    // this time it will remain at FrequencyRealCache
+    ASSERT_OK(InsertKV("a", 3, h.state));
+    h = Lookup("a");
+    ASSERT_EQ(h.state, kFrequencyRealHit);
+    Release(h);
+  }
 }
 
 #ifdef SUPPORT_CLOCK_CACHE

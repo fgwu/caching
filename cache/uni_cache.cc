@@ -10,6 +10,11 @@ static void DeleteDataEntry(const Slice & /*key*/, void *value) {
   delete typed_value;
 }
 
+static void DeleteGhostEntry(const Slice & /*key*/, void *value) {
+  assert(!value);
+  // not any value stored. nothing needs to be deleted.
+}
+
 UniCacheFix::UniCacheFix(
     size_t capacity, double kp_cache_ratio, int num_shard_bits,
     bool strict_capacity_limit,
@@ -207,6 +212,12 @@ void UniCacheFix::EraseUnRefEntries() {
   kp_cache_->EraseUnRefEntries();
 }
 
+std::shared_ptr<LRUCache>
+NewPureLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+                double high_pri_pool_ratio,
+                std::shared_ptr<MemoryAllocator> memory_allocator,
+                bool use_adaptive_mutex);
+
 UniCacheAdapt::UniCacheAdapt(
     size_t capacity, int num_shard_bits, bool strict_capacity_limit,
     std::shared_ptr<MemoryAllocator> /*memory_allocator*/)
@@ -219,22 +230,28 @@ UniCacheAdapt::UniCacheAdapt(
   size_t recency_ghost_cache_capacity = frequency_real_cache_capacity;
   size_t frequency_ghost_cache_capacity = recency_real_cache_capacity;
 
-  frequency_real_cache_ = NewLRUCache(frequency_real_cache_capacity,
-                                      num_shard_bits, strict_capacity_limit);
-  recency_real_cache_ = NewLRUCache(recency_real_cache_capacity, num_shard_bits,
-                                    strict_capacity_limit);
+  frequency_real_cache_ = NewPureLRUCache(
+      frequency_real_cache_capacity, num_shard_bits, strict_capacity_limit);
+  recency_real_cache_ = NewPureLRUCache(recency_real_cache_capacity,
+                                        num_shard_bits, strict_capacity_limit);
 
   // TODO(fwu): reduce the ghost cache memory usage
-  frequency_ghost_cache_ = NewLRUCache(frequency_ghost_cache_capacity,
-                                       num_shard_bits, strict_capacity_limit);
-  recency_ghost_cache_ = NewLRUCache(recency_ghost_cache_capacity,
-                                     num_shard_bits, strict_capacity_limit);
+  frequency_ghost_cache_ = NewPureLRUCache(
+      frequency_ghost_cache_capacity, num_shard_bits, strict_capacity_limit);
+  recency_ghost_cache_ = NewPureLRUCache(recency_ghost_cache_capacity,
+                                         num_shard_bits, strict_capacity_limit);
 }
 
 Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
                              const UniCacheAdaptArcState &state) {
-  size_t charge = 0;
+  if (state == kFrequencyRealHit) {
+    // the item was just hit in FrequencyRealCache, we need not
+    // move it ot any other cache.
+    return Status::OK();
+  }
+
   Status s;
+  size_t charge = 0;
 
   // data_entry: calculate size charge
   assert(data_entry);
@@ -257,30 +274,43 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
   // sanity check on the UniCache components
   assert(frequency_real_cache_->GetCapacity() > 0);
   assert(recency_real_cache_->GetCapacity() > 0);
-
-  if (state == kFrequencyRealHit) {
-    // cannot reach here
-    assert(0);
-  }
-
+  
+  std::shared_ptr<autovector<LRUHandle *>> evicted_handles;
   if (state == kBothMiss) {
-    s = recency_real_cache_->Insert(key, row_ptr, charge, &DeleteDataEntry);
+    s = recency_real_cache_->Insert(key, row_ptr, charge, &DeleteDataEntry,
+                                    nullptr /*handle*/, Cache::Priority::LOW,
+                                    &evicted_handles);
     if (!s.ok()) {
       return s;
     }
-    // TODO(fwu): insert the evicted entry to recency_ghost_cache
+
+    for (LRUHandle *evicted_entry : *evicted_handles) {
+      recency_ghost_cache_->Insert(evicted_entry->key(), nullptr, key.size(),
+                                   &DeleteGhostEntry, nullptr /*handle*/,
+                                   Cache::Priority::LOW,
+                                   nullptr /*evicted_handles*/);
+      evicted_entry->Free();
+    }
 
     return s;
   }
 
   // Now handle kRecencyRealHit, kFreqeuncyGhostHit, kRecencyGhostHit
-  s = frequency_real_cache_->Insert(key, row_ptr, charge, &DeleteDataEntry);
+  s = frequency_real_cache_->Insert(key, row_ptr, charge, &DeleteDataEntry,
+                                    nullptr /*handle*/, Cache::Priority::LOW,
+                                    &evicted_handles);
 
   if (!s.ok()) {
     return s;
   }
 
-  // TODO(fwu): insert evicted entry to frequency ghost cache
+  // TODO(fwu): shrink the footage of the ghost cache by only store the hash.
+  for (LRUHandle *evicted_entry : *evicted_handles) {
+    frequency_ghost_cache_->Insert(
+        evicted_entry->key(), nullptr, key.size(), &DeleteGhostEntry,
+        nullptr /*handle*/, Cache::Priority::LOW, nullptr /*evicted_handles*/);
+    evicted_entry->Free();
+  }
 
   switch (state) {
   case kFrequencyRealHit:

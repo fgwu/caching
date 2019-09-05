@@ -667,4 +667,24 @@ std::shared_ptr<Cache> NewLRUCache(
                                     use_adaptive_mutex);
 }
 
+std::shared_ptr<LRUCache>
+NewPureLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
+                double high_pri_pool_ratio,
+                std::shared_ptr<MemoryAllocator> memory_allocator,
+                bool use_adaptive_mutex) {
+  if (num_shard_bits >= 20) {
+    return nullptr; // the cache cannot be sharded into too many fine pieces
+  }
+  if (high_pri_pool_ratio < 0.0 || high_pri_pool_ratio > 1.0) {
+    // invalid high_pri_pool_ratio
+    return nullptr;
+  }
+  if (num_shard_bits < 0) {
+    num_shard_bits = GetDefaultCacheShardBits(capacity);
+  }
+  return std::make_shared<LRUCache>(
+      capacity, num_shard_bits, strict_capacity_limit, high_pri_pool_ratio,
+      std::move(memory_allocator), use_adaptive_mutex);
+}
+
 }  // namespace rocksdb

@@ -103,6 +103,13 @@ extern std::shared_ptr<Cache> NewLRUCache(
     bool strict_capacity_limit = false, double high_pri_pool_ratio = 0.0,
     std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
     bool use_adaptive_mutex = kDefaultToAdaptiveMutex);
+struct LRUCache;
+extern std::shared_ptr<LRUCache>
+NewPureLRUCache(size_t capacity, int num_shard_bits = -1,
+                bool strict_capacity_limit = false,
+                double high_pri_pool_ratio = 0.0,
+                std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+                bool use_adaptive_mutex = kDefaultToAdaptiveMutex);
 
 extern std::shared_ptr<Cache> NewLRUCache(const LRUCacheOptions& cache_opts);
 
