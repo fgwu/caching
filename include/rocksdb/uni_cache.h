@@ -73,6 +73,7 @@ NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits = -1,
 extern std::shared_ptr<UniCache>
 NewUniCacheAdapt(size_t capacity, int num_shard_bits = -1,
                  bool strict_capacity_limit = false,
+                 double recency_init_ratio = 0.5, bool adaptive_size = true,
                  double high_pri_pool_ratio = 0.0,
                  std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
                  bool use_adaptive_mutex = kDefaultToAdaptiveMutex);

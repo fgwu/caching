@@ -93,12 +93,13 @@ struct DataEntry {
     case kKV:
       return reinterpret_cast<ValueLogAndLevel *>(entry)->level;
     case kKP:
-      return reinterpret_cast<FilePointerAndBlockHandle *>(entry)->file_pointer.level;
+      return reinterpret_cast<FilePointerAndBlockHandle *>(entry)
+          ->file_pointer.level;
     default:
       assert(0);
     }
   }
-  
+
   void InitNew(UniCacheEntryType _data_type) {
     data_type = _data_type;
     switch (data_type) {
@@ -209,7 +210,8 @@ const size_t kAdaptBaseUnitSizeSqure = 1 << 16;
 class UniCacheAdapt : public UniCache {
 public:
   UniCacheAdapt(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-                std::shared_ptr<MemoryAllocator> memory_allocator = nullptr);
+                double recency_init_ratio, bool adaptive_size,
+                std::shared_ptr<MemoryAllocator> memory_allocator);
 
   virtual const char *Name() const override { return "UniCacheAdapt"; }
 
@@ -236,9 +238,7 @@ public:
 
 private:
   // the size is adjusted after each ghost hit.
-  inline void AdjustSize() {
-    
-  }
+  inline void AdjustSize() {}
 
   static inline size_t AdjustAmount(int level, size_t charge) {
     // E.g. level = 3. The get will have travel L0 .. L3
@@ -250,8 +250,13 @@ private:
     int estimated_saved_io = level ? (level + 8) : 4;
 
     // kAdaptBaseUnitSize * estimiated_saved_io / (charge / kAdaptBaseUnitSize)
-    return kAdaptBaseUnitSizeSqure * estimiated_saved_io / charge;
+    return kAdaptBaseUnitSizeSqure * estimated_saved_io / charge;
   }
+
+  Status HandleRecencyRealHit(const Slice &key, void *ptr, size_t charge);
+  Status HandleRecencyGhostHit(const Slice &key, void *ptr, size_t charge);
+  Status HandleFrequencyGhostHit(const Slice &key, void *ptr, size_t charge);
+  Status HandleBothMiss(const Slice &key, void *ptr, size_t charge);
 
   std::shared_ptr<LRUCache> frequency_real_cache_;
   std::shared_ptr<LRUCache> recency_real_cache_;
@@ -261,6 +266,7 @@ private:
 
   size_t total_capacity_;
   size_t target_recency_cache_capacity_;
+  bool adaptive_size_;
 };
 
 } // namespace rocksdb

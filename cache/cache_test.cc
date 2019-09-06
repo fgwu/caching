@@ -850,55 +850,57 @@ TEST_F(UniCacheAdaptTest, RecencyRealPromoteToFrequencyReal) {
   Release(h);
 }
 
-TEST_F(UniCacheAdaptTest, AllPromotionAndDemotion) {
-  UniCacheAdaptArcState s = kBothMiss;
-  // first appearance,insert to RecencyRealCache
-  ASSERT_OK(InsertKV("a", 3, s));
-  UniCacheAdaptHandle h = Lookup("a");
-  ASSERT_EQ(h.state, kRecencyRealHit);
-  Release(h);
+// As the ghost cache how takes virtual charge, the test
+// in here no longer applies.
+// TEST_F(UniCacheAdaptTest, AllPromotionAndDemotion) {
+//   UniCacheAdaptArcState s = kBothMiss;
+//   // first appearance,insert to RecencyRealCache
+//   ASSERT_OK(InsertKV("a", 3, s));
+//   UniCacheAdaptHandle h = Lookup("a");
+//   ASSERT_EQ(h.state, kRecencyRealHit);
+//   Release(h);
 
-  // caller insert a <kv> with very  big value that evict
-  // key("a") to recency ghost. Note that the value of key("big")
-  // is so big that it is evicted to the RecencyGhost too.
-  // note that the GhostCache discard the big value so key("big")
-  // will not be evicted from RecencyGhost
-  ASSERT_OK(InsertKV("big", 4090, kBothMiss));
-  h = Lookup("a");
-  ASSERT_EQ(h.state, kRecencyGhostHit);
-  Release(h);
+//   // caller insert a <kv> with very  big value that evict
+//   // key("a") to recency ghost. Note that the value of key("big")
+//   // is so big that it is evicted to the RecencyGhost too.
+//   // note that the GhostCache discard the big value so key("big")
+//   // will not be evicted from RecencyGhost
+//   ASSERT_OK(InsertKV("big", 4090, kBothMiss));
+//   h = Lookup("a");
+//   ASSERT_EQ(h.state, kRecencyGhostHit);
+//   Release(h);
 
-  // caller insert the item back yet again
-  // this time it will be promoted to FrequencyRealCache
-  ASSERT_OK(InsertKV("a", 3, h.state));
-  h = Lookup("a");
-  ASSERT_EQ(h.state, kFrequencyRealHit);
-  Release(h);
+//   // caller insert the item back yet again
+//   // this time it will be promoted to FrequencyRealCache
+//   ASSERT_OK(InsertKV("a", 3, h.state));
+//   h = Lookup("a");
+//   ASSERT_EQ(h.state, kFrequencyRealHit);
+//   Release(h);
 
-  // look up key("big") and promoted it to FrequencyRealCache
-  h = Lookup("big");
-  ASSERT_EQ(h.state, kRecencyGhostHit);
-  Release(h);
-  // the promotion of key("big") will evict the key("a") who was
-  // already in FrequecyReal, so key("a") will be down graded to
-  // FrequencyGhost.
-  // Note that after insersion, key("big") will be evicted from
-  // FrequencyReal due to its big value. the value will be discard
-  // when it is downgraded to the FrequencyGhost cache.
-  ASSERT_OK(InsertKV("big", 4090, h.state));
-  h = Lookup("big");
-  ASSERT_EQ(h.state, kFrequencyGhostHit);
-  Release(h);
-  h = Lookup("a");
-  ASSERT_EQ(h.state, kFrequencyGhostHit);
-  Release(h);
+//   // look up key("big") and promoted it to FrequencyRealCache
+//   h = Lookup("big");
+//   ASSERT_EQ(h.state, kRecencyGhostHit);
+//   Release(h);
+//   // the promotion of key("big") will evict the key("a") who was
+//   // already in FrequecyReal, so key("a") will be down graded to
+//   // FrequencyGhost.
+//   // Note that after insersion, key("big") will be evicted from
+//   // FrequencyReal due to its big value. the value will be discard
+//   // when it is downgraded to the FrequencyGhost cache.
+//   ASSERT_OK(InsertKV("big", 4090, h.state));
+//   h = Lookup("big");
+//   ASSERT_EQ(h.state, kFrequencyGhostHit);
+//   Release(h);
+//   h = Lookup("a");
+//   ASSERT_EQ(h.state, kFrequencyGhostHit);
+//   Release(h);
 
-  // insert it again will bring it to FrequencyReal.
-  ASSERT_OK(InsertKV("a", 3, h.state));
-  h = Lookup("a");
-  ASSERT_EQ(h.state, kFrequencyRealHit);
-  Release(h);
-}
+//   // insert it again will bring it to FrequencyReal.
+//   ASSERT_OK(InsertKV("a", 3, h.state));
+//   h = Lookup("a");
+//   ASSERT_EQ(h.state, kFrequencyRealHit);
+//   Release(h);
+//}
 
 #ifdef SUPPORT_CLOCK_CACHE
 std::shared_ptr<Cache> (*new_clock_cache_func)(size_t, int,
