@@ -39,7 +39,7 @@ struct FilePointerAndBlockHandle {
 
 struct ValueLogAndLevel {
   std::string get_context_replay_log;
-  int level;
+  unsigned int level;
 };
 
 struct DataEntry {
@@ -87,6 +87,18 @@ struct DataEntry {
     return reinterpret_cast<FilePointerAndBlockHandle *>(entry);
   }
 
+  int level() const {
+    assert(entry);
+    switch (data_type) {
+    case kKV:
+      return reinterpret_cast<ValueLogAndLevel *>(entry)->level;
+    case kKP:
+      return reinterpret_cast<FilePointerAndBlockHandle *>(entry)->file_pointer.level;
+    default:
+      assert(0);
+    }
+  }
+  
   void InitNew(UniCacheEntryType _data_type) {
     data_type = _data_type;
     switch (data_type) {
@@ -191,6 +203,9 @@ private:
   double kp_cache_ratio_;
 };
 
+const size_t kAdaptBaseUnitSize = 1 << 8;
+const size_t kAdaptBaseUnitSizeSqure = 1 << 16;
+
 class UniCacheAdapt : public UniCache {
 public:
   UniCacheAdapt(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
@@ -221,7 +236,21 @@ public:
 
 private:
   // the size is adjusted after each ghost hit.
-  void AdjustSize() { /*assert(0); TODO(fwu)*/
+  inline void AdjustSize() {
+    
+  }
+
+  static inline size_t AdjustAmount(int level, size_t charge) {
+    // E.g. level = 3. The get will have travel L0 .. L3
+    // L0 suppose has 8 SSTs, then
+    // Saved I/O = L0 + L1 + L2 + L3 = 8 + 1 + 1 + 1.
+    // E.g. level = 0 we estimate half of the L0 will be traveled
+    // suppose L0 has 8 SSTs, then
+    // Saved I/O = 8/2 = 4;
+    int estimated_saved_io = level ? (level + 8) : 4;
+
+    // kAdaptBaseUnitSize * estimiated_saved_io / (charge / kAdaptBaseUnitSize)
+    return kAdaptBaseUnitSizeSqure * estimiated_saved_io / charge;
   }
 
   std::shared_ptr<LRUCache> frequency_real_cache_;

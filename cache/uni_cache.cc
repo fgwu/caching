@@ -245,6 +245,8 @@ UniCacheAdapt::UniCacheAdapt(
 Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
                              const UniCacheAdaptArcState &state) {
   if (state == kFrequencyRealHit) {
+    // Case I.1 The item was already moved to MRU of Freq Real during
+    // Lookup(), so nothing else has to be done.
     // the item was just hit in FrequencyRealCache, we need not
     // move it ot any other cache.
     return Status::OK();
@@ -285,10 +287,17 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
     }
 
     for (LRUHandle *evicted_entry : *evicted_handles) {
-      recency_ghost_cache_->Insert(evicted_entry->key(), nullptr, key.size(),
-                                   &DeleteGhostEntry, nullptr /*handle*/,
-                                   Cache::Priority::LOW,
-                                   nullptr /*evicted_handles*/);
+      // insert the itme evicted from the real cache to the ghost cache
+      // note that the charge is still the origitnal size, although we
+      // discard the value.
+      // This is to make the following equation holds:
+      // real + ghost = physical cache capacity (virtually)
+      // TODO(fwu): However the space taken by ghost cache is not counted.
+      recency_ghost_cache_->Insert(evicted_entry->key(), nullptr,
+                                   evicted_entry->charge /*virtual charge*/,
+				   &DeleteGhostEntry, nullptr /*handle*/,
+				   Cache::Priority::LOW,
+				   nullptr /*evicted_handles*/);
       evicted_entry->Free();
     }
 
@@ -307,8 +316,10 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
   // TODO(fwu): shrink the footage of the ghost cache by only store the hash.
   for (LRUHandle *evicted_entry : *evicted_handles) {
     frequency_ghost_cache_->Insert(
-        evicted_entry->key(), nullptr, key.size(), &DeleteGhostEntry,
-        nullptr /*handle*/, Cache::Priority::LOW, nullptr /*evicted_handles*/);
+        evicted_entry->key(), nullptr,
+        evicted_entry.charge /* using virtual charge for same reason as above*/,
+        &DeleteGhostEntry, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*evicted_handles*/);
     evicted_entry->Free();
   }
 
@@ -345,14 +356,14 @@ UniCacheAdaptHandle UniCacheAdapt::Lookup(const Slice &key, Statistics *stats) {
     // recency real hit, should move to MRU of frequency real cache
     // however, promotion is possible. Let the caller to erase from recency real
     // cache and insert to frequency real cache later.
-    AdjustSize();
     return UniCacheAdaptHandle(handle, kRecencyRealHit);
   }
 
   if ((handle = frequency_ghost_cache_->Lookup(key, stats)) != nullptr) {
     // frequency ghost hit, no size adjustment needed.
     // the caller should insert the value to MRU of freq real cache
-    AdjustSize();
+    int level = reinterpret_cast<DataEntry*>(handle->value).level();
+    target_recency_cache_capacity_ -= AdjustAmount(handle->value);
     frequency_ghost_cache_->Release(handle);
     return UniCacheAdaptHandle(nullptr, kFrequencyGhostHit);
   }
