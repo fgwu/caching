@@ -3,7 +3,11 @@
 #include "cache/lru_cache.h"
 #include "cache/uni_cache_internal.h"
 
+#include <algorithm>
+
 namespace rocksdb {
+
+size_t UniCacheAdapt::adapt_base_unit_size_square_ = 1 << 16;
 
 static void DeleteDataEntry(const Slice & /*key*/, void *value) {
   DataEntry *typed_value = reinterpret_cast<DataEntry *>(value);
@@ -244,106 +248,68 @@ UniCacheAdapt::UniCacheAdapt(
                                          num_shard_bits, strict_capacity_limit);
 }
 
-Status UniCacheAdapt::HandleRecencyRealHit(const Slice &key, void *ptr,
-                                           size_t charge) {
-  std::shared_ptr<autovector<LRUHandle *>> evicted_handles;
-  Status s = frequency_real_cache_->Insert(
-      key, ptr, charge, &DeleteDataEntry, nullptr /*handle*/,
-      Cache::Priority::LOW, &evicted_handles);
+void UniCacheAdapt::AdjustCapacity() {
+  size_t usage_frequency_real;
+  size_t usage_recency_real;
+  size_t usage_recency_ghost;
 
-  if (!s.ok()) {
-    return s;
+  std::shared_ptr<autovector<LRUHandle *>> recency_real_victims;
+  std::shared_ptr<autovector<LRUHandle *>> frequency_real_victims;
+
+  // Shrink size of the *real caches* to the desired state.
+  // whether to shrink recency_real or frequency_real depends on
+  // the target_recency_real_cache_size
+  if (recency_real_cache_->GetUsage() > target_recency_cache_capacity_) {
+    // evict from recency_real
+
+    // a) fix frequency_real. The only limit is the total cache size.
+    frequency_real_cache_->SetCapacity(total_capacity_,
+                                       &frequency_real_victims);
+    usage_frequency_real = frequency_real_cache_->GetUsage();
+
+    // b) handle recency_real, based on the freq real size.
+    recency_real_cache_->SetCapacity(total_capacity_ - usage_frequency_real,
+                                     &recency_real_victims);
+    usage_recency_real = recency_real_cache_->GetUsage();
+  } else {
+    // recency_too_large == false, evict from freq_real
+
+    // a) fix recency_real. The only limit is the total_capacity
+    recency_real_cache_->SetCapacity(total_capacity_, &recency_real_victims);
+    usage_recency_real = recency_real_cache_->GetUsage();
+
+    // b) handle frequency_real, based on the recency_real size
+    frequency_real_cache_->SetCapacity(total_capacity_ - usage_recency_real,
+                                       &frequency_real_victims);
+    usage_frequency_real = frequency_real_cache_->GetUsage();
   }
 
-  // TODO(fwu): shrink the footage of the ghost cache by only store the hash.
-  for (LRUHandle *evicted_entry : *evicted_handles) {
-    frequency_ghost_cache_->Insert(
-        evicted_entry->key(), nullptr,
-        evicted_entry
-            ->charge /* using virtual charge for same reason as above*/,
-        &DeleteGhostEntry, nullptr /*handle*/, Cache::Priority::LOW,
-        nullptr /*evicted_handles*/);
-    evicted_entry->Free();
-  }
+  // 4. Handle the *ghost cache* size. Always handle the recency_ghost first
+  // first insert the overflow victims, and then set the capaicty
 
-  recency_real_cache_->Erase(key);
-  return s;
-}
-
-Status UniCacheAdapt::HandleRecencyGhostHit(const Slice &key, void *ptr,
-                                            size_t charge) {
-  std::shared_ptr<autovector<LRUHandle *>> evicted_handles;
-  Status s = frequency_real_cache_->Insert(
-      key, ptr, charge, &DeleteDataEntry, nullptr /*handle*/,
-      Cache::Priority::LOW, &evicted_handles);
-
-  if (!s.ok()) {
-    return s;
-  }
-
-  // TODO(fwu): shrink the footage of the ghost cache by only store the hash.
-  for (LRUHandle *evicted_entry : *evicted_handles) {
-    frequency_ghost_cache_->Insert(
-        evicted_entry->key(), nullptr,
-        evicted_entry
-            ->charge /* using virtual charge for same reason as above*/,
-        &DeleteGhostEntry, nullptr /*handle*/, Cache::Priority::LOW,
-        nullptr /*evicted_handles*/);
-    evicted_entry->Free();
-  }
-
-  recency_ghost_cache_->Erase(key);
-  return s;
-}
-Status UniCacheAdapt::HandleFrequencyGhostHit(const Slice &key, void *ptr,
-                                              size_t charge) {
-  std::shared_ptr<autovector<LRUHandle *>> evicted_handles;
-  Status s = frequency_real_cache_->Insert(
-      key, ptr, charge, &DeleteDataEntry, nullptr /*handle*/,
-      Cache::Priority::LOW, &evicted_handles);
-
-  if (!s.ok()) {
-    return s;
-  }
-
-  // TODO(fwu): shrink the footage of the ghost cache by only store the hash.
-  for (LRUHandle *evicted_entry : *evicted_handles) {
-    frequency_ghost_cache_->Insert(
-        evicted_entry->key(), nullptr,
-        evicted_entry
-            ->charge /* using virtual charge for same reason as above*/,
-        &DeleteGhostEntry, nullptr /*handle*/, Cache::Priority::LOW,
-        nullptr /*evicted_handles*/);
-    evicted_entry->Free();
-  }
-
-  frequency_ghost_cache_->Erase(key);
-  return s;
-}
-Status UniCacheAdapt::HandleBothMiss(const Slice &key, void *ptr,
-                                     size_t charge) {
-  std::shared_ptr<autovector<LRUHandle *>> evicted_handles;
-  Status s = recency_real_cache_->Insert(
-      key, ptr, charge, &DeleteDataEntry, nullptr /*handle*/,
-      Cache::Priority::LOW, &evicted_handles);
-  if (!s.ok()) {
-    return s;
-  }
-
-  for (LRUHandle *evicted_entry : *evicted_handles) {
-    // insert the itme evicted from the real cache to the ghost cache
-    // note that the charge is still the origitnal size, although we
-    // discard the value.
-    // This is to make the following equation holds:
-    // real + ghost = physical cache capacity (virtually)
-    // TODO(fwu): However the space taken by ghost cache is not counted.
+  // c) handle recency_ghost, based on the recency_real size, and the overflow
+  // evicted victim list
+  for (LRUHandle *recency_real_victim : *recency_real_victims) {
     recency_ghost_cache_->Insert(
-        evicted_entry->key(), nullptr, evicted_entry->charge /*virtual charge*/,
-        &DeleteGhostEntry, nullptr /*handle*/, Cache::Priority::LOW,
-        nullptr /*evicted_handles*/);
-    evicted_entry->Free();
+        recency_real_victim->key(), nullptr,
+        recency_real_victim->charge /*virtual charge*/, &DeleteGhostEntry,
+        nullptr /*handle*/, Cache::Priority::LOW, nullptr /*evicted_handles*/);
+    recency_real_victim->Free();
   }
-  return s;
+  recency_ghost_cache_->SetCapacity(total_capacity_ - usage_recency_real);
+  usage_recency_ghost = recency_ghost_cache_->GetUsage();
+
+  // d) handle the frequency_ghost cache, base on the usage of all others
+  for (LRUHandle *frequency_real_victim : *frequency_real_victims) {
+    recency_ghost_cache_->Insert(
+        frequency_real_victim->key(), nullptr,
+        frequency_real_victim->charge /*virtual charge*/, &DeleteGhostEntry,
+        nullptr /*handle*/, Cache::Priority::LOW, nullptr /*evicted_handles*/);
+    frequency_real_victim->Free();
+  }
+  frequency_ghost_cache_->SetCapacity(total_capacity_ * 2 -
+                                      usage_frequency_real -
+                                      usage_recency_real - usage_recency_ghost);
 }
 
 Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
@@ -381,20 +347,68 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
   assert(frequency_real_cache_->GetCapacity() > 0);
   assert(recency_real_cache_->GetCapacity() > 0);
 
+  // 1. Enlarge Capacity first. The size will be adjust adaptively (shrink)
+  // later in AdjustSize()
+  size_t large_capacity = total_capacity_ * 3;
+  frequency_real_cache_->SetCapacity(large_capacity);
+  recency_real_cache_->SetCapacity(large_capacity);
+  frequency_ghost_cache_->SetCapacity(large_capacity);
+  recency_ghost_cache_->SetCapacity(large_capacity);
+
+  // 2. Perform insertion and deletion as necessary
+  std::shared_ptr<autovector<LRUHandle *>> victims;
   switch (state) {
   case kFrequencyRealHit: // Case I.B Already handled above
     assert(0);
   case kRecencyRealHit: // Case I.A
-    return HandleRecencyRealHit(key, ptr, charge);
+  {
+    recency_real_cache_->Erase(key);
+    s = frequency_real_cache_->Insert(key, ptr, charge, &DeleteDataEntry,
+                                      nullptr /*handle*/, Cache::Priority::LOW,
+                                      &victims);
+    assert(s.ok());
+    // Cache size big enough, Shouldn't cause any eviction
+    assert(victims->size() == 0);
+    break;
+  }
   case kRecencyGhostHit: // Case II
-    return HandleRecencyGhostHit(key, ptr, charge);
+  {
+    recency_ghost_cache_->Erase(key);
+    s = frequency_real_cache_->Insert(key, ptr, charge, &DeleteDataEntry,
+                                      nullptr /*handle*/, Cache::Priority::LOW,
+                                      &victims);
+    assert(s.ok());
+    // Cache size big enough, Shouldn't cause any eviction
+    assert(victims->size() == 0);
+    break;
+  }
   case kFrequencyGhostHit: // Case II*
-    return HandleFrequencyGhostHit(key, ptr, charge);
+  {
+    frequency_ghost_cache_->Erase(key);
+    s = frequency_real_cache_->Insert(key, ptr, charge, &DeleteDataEntry,
+                                      nullptr /*handle*/, Cache::Priority::LOW,
+                                      &victims);
+    assert(s.ok());
+    // Cache size big enough, Shouldn't cause any eviction
+    assert(victims->size() == 0);
+    break;
+  }
   case kBothMiss: // Case IV
-    return HandleBothMiss(key, ptr, charge);
+  {
+    s = recency_real_cache_->Insert(key, ptr, charge, &DeleteDataEntry,
+                                    nullptr /*handle*/, Cache::Priority::LOW,
+                                    &victims);
+    assert(s.ok());
+    // Cache size big enough, Shouldn't cause any eviction
+    assert(victims->size() == 0);
+    break;
+  }
   default:
     assert(0);
   }
+
+  AdjustCapacity();
+
   return s;
 }
 

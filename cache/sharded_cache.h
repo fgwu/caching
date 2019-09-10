@@ -103,7 +103,7 @@ protected:
     return (num_shard_bits_ > 0) ? (hash >> (32 - num_shard_bits_)) : 0;
   }
 
-private:
+protected:
   int num_shard_bits_;
   mutable port::Mutex capacity_mutex_;
   size_t capacity_;

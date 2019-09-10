@@ -14,6 +14,7 @@
 
 #include "port/port.h"
 #include "util/autovector.h"
+#include "util/mutexlock.h"
 
 namespace rocksdb {
 
@@ -315,6 +316,14 @@ class LRUCache
                 void (*deleter)(const Slice &key, void *value), Handle **handle,
                 Priority priority,
                 std::shared_ptr<autovector<LRUHandle *>> *evicted_handles);
+  void SetCapacity(
+      size_t capacity,
+      std::shared_ptr<autovector<LRUHandle *>> *evicted_handles = nullptr) {
+    assert(num_shard_bits_ == 0);
+    MutexLock l(&capacity_mutex_);
+    GetShard(0)->SetCapacity(capacity, evicted_handles);
+    capacity_ = capacity;
+  }
 
   //  Retrieves number of elements in LRU, for unit test purpose only
   size_t TEST_GetLRUSize();

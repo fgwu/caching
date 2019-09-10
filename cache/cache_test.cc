@@ -850,6 +850,12 @@ TEST_F(UniCacheAdaptTest, RecencyRealPromoteToFrequencyReal) {
   Release(h);
 }
 
+TEST_F(UniCacheAdaptTest, GetSetAdaptLearningRate) {
+  ASSERT_EQ(UniCacheAdapt::GetAdaptLearningRate(), 1 << 16);
+  UniCacheAdapt::SetAdaptLearningRate(1 << 18);
+  ASSERT_EQ(UniCacheAdapt::GetAdaptLearningRate(), 1 << 18);
+}
+
 // As the ghost cache how takes virtual charge, the test
 // in here no longer applies.
 // TEST_F(UniCacheAdaptTest, AllPromotionAndDemotion) {

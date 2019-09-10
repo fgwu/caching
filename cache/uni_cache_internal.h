@@ -204,9 +204,6 @@ private:
   double kp_cache_ratio_;
 };
 
-const size_t kAdaptBaseUnitSize = 1 << 8;
-const size_t kAdaptBaseUnitSizeSqure = 1 << 16;
-
 class UniCacheAdapt : public UniCache {
 public:
   UniCacheAdapt(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
@@ -236,6 +233,12 @@ public:
 
   Cache *recency_real_cache() { return recency_real_cache_.get(); }
 
+  static void SetAdaptLearningRate(size_t adapt_base_unit_size_square) {
+    adapt_base_unit_size_square_ = adapt_base_unit_size_square;
+  }
+
+  static size_t GetAdaptLearningRate() { return adapt_base_unit_size_square_; }
+
 private:
   // the size is adjusted after each ghost hit.
   inline void AdjustSize() {}
@@ -250,13 +253,10 @@ private:
     int estimated_saved_io = level ? (level + 8) : 4;
 
     // kAdaptBaseUnitSize * estimiated_saved_io / (charge / kAdaptBaseUnitSize)
-    return kAdaptBaseUnitSizeSqure * estimated_saved_io / charge;
+    return adapt_base_unit_size_square_ * estimated_saved_io / charge;
   }
 
-  Status HandleRecencyRealHit(const Slice &key, void *ptr, size_t charge);
-  Status HandleRecencyGhostHit(const Slice &key, void *ptr, size_t charge);
-  Status HandleFrequencyGhostHit(const Slice &key, void *ptr, size_t charge);
-  Status HandleBothMiss(const Slice &key, void *ptr, size_t charge);
+  void AdjustCapacity();
 
   std::shared_ptr<LRUCache> frequency_real_cache_;
   std::shared_ptr<LRUCache> recency_real_cache_;
@@ -267,6 +267,9 @@ private:
   size_t total_capacity_;
   size_t target_recency_cache_capacity_;
   bool adaptive_size_;
+
+  //  static size_t adapt_base_uni_size = 1 << 8;
+  static size_t adapt_base_unit_size_square_;
 };
 
 } // namespace rocksdb
