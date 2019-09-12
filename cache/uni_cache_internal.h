@@ -204,6 +204,8 @@ private:
   double kp_cache_ratio_;
 };
 
+class UniCacheAdaptTest_AdaptiveTest2_Test;
+
 class UniCacheAdapt : public UniCache {
 public:
   UniCacheAdapt(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
@@ -226,7 +228,7 @@ public:
   virtual void Erase(const Slice &key, UniCacheAdaptArcState state);
 
   virtual size_t GetCapacity() const override;
-  
+
   virtual size_t GetUsage() const;
 
   virtual bool AdaptiveSupported() override { return true; }
@@ -247,7 +249,7 @@ public:
 
 private:
   void AdjustTargetRecencyRealCacheSize(bool increase_flag, int level,
-					size_t charge ) {
+                                        size_t charge) {
     // E.g. level = 3. The get will have travel L0 .. L3
     // L0 suppose has 8 SSTs, then
     // Saved I/O = L0 + L1 + L2 + L3 = 8 + 1 + 1 + 1.
@@ -261,28 +263,27 @@ private:
       // we are increaing recency_real. If recency_ghost is alreay small
       // we are going to speed up the learning
       speedup_factor =
-	std::max(speedup_factor, 1.0 * frequency_ghost_cache_->GetUsage()
-	       / recency_ghost_cache_->GetUsage());
+          std::max(speedup_factor, 1.0 * frequency_ghost_cache_->GetUsage() /
+                                       recency_ghost_cache_->GetUsage());
     } else {
       // we are decreasing recency_real. If recency_ghost is already large
       // we are going to speed up the learning
       speedup_factor =
-	std::max(speedup_factor, 1.0 * recency_ghost_cache_->GetUsage()
-	       / frequency_ghost_cache_->GetUsage());
+          std::max(speedup_factor, 1.0 * recency_ghost_cache_->GetUsage() /
+                                       frequency_ghost_cache_->GetUsage());
     }
-    
+
     // kAdaptBaseUnitSize * estimiated_saved_io / (charge / kAdaptBaseUnitSize)
-    size_t adjust_amount = speedup_factor *  adapt_base_unit_size_square_
-      * estimated_saved_io / charge;
-  
+    size_t adjust_amount = speedup_factor * adapt_base_unit_size_square_ *
+                           estimated_saved_io / charge;
+
     if (increase_flag) {
-      target_recency_cache_capacity_ =
-	std::min(total_capacity_,
-		 target_recency_cache_capacity_ + adjust_amount);
+      target_recency_cache_capacity_ = std::min(
+          total_capacity_, target_recency_cache_capacity_ + adjust_amount);
     } else {
       target_recency_cache_capacity_ =
-	std::max(adjust_amount, target_recency_cache_capacity_)
-	- adjust_amount;
+          std::max(adjust_amount, target_recency_cache_capacity_) -
+          adjust_amount;
     }
   }
 
@@ -295,8 +296,9 @@ private:
   //   // Saved I/O = 8/2 = 4;
   //   int estimated_saved_io = level ? (level + 8) : 4;
 
-  //   // kAdaptBaseUnitSize * estimiated_saved_io / (charge / kAdaptBaseUnitSize)
-  //   return adapt_base_unit_size_square_ * estimated_saved_io / charge;
+  //   // kAdaptBaseUnitSize * estimiated_saved_io / (charge /
+  //   kAdaptBaseUnitSize) return adapt_base_unit_size_square_ *
+  //   estimated_saved_io / charge;
   // }
 
   void AdjustCapacity(UniCacheAdaptArcState state);
@@ -313,6 +315,7 @@ private:
 
   //  static size_t adapt_base_uni_size = 1 << 8;
   static size_t adapt_base_unit_size_square_;
+  friend UniCacheAdaptTest_AdaptiveTest2_Test;
 };
 
 } // namespace rocksdb

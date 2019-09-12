@@ -326,7 +326,7 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
   Status s;
   size_t charge = 0;
   int level = data_entry->level();
-  
+
   // data_entry: calculate size charge
   assert(data_entry);
   switch (data_entry->data_type) {
@@ -512,8 +512,7 @@ size_t UniCacheAdapt::GetCapacity() const {
 }
 
 size_t UniCacheAdapt::GetUsage() const {
-  return frequency_real_cache_->GetUsage() +
-         recency_real_cache_->GetUsage();
+  return frequency_real_cache_->GetUsage() + recency_real_cache_->GetUsage();
 }
 
 std::shared_ptr<UniCache>

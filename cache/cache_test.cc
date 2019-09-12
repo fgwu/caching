@@ -820,11 +820,12 @@ public:
     }
     Status s = InsertKP(key, lookup_state);
     assert(s.ok());
-    std::cout << "key(\"" << key.ToString() << "\") target="
-	      << cache_->GetTargetRecnecyRealCacheSize() << "\n";
+    std::cout << "key(\"" << key.ToString()
+              << "\") target=" << cache_->GetTargetRecnecyRealCacheSize()
+              << "\n";
     return lookup_state;
   }
-  
+
   bool Release(const UniCacheAdaptHandle &arc_handle,
                bool force_erase = false) {
     return cache_->Release(arc_handle, force_erase);
@@ -850,7 +851,7 @@ TEST_F(UniCacheAdaptTest, BasicTest) {
   s = kBothMiss;
   ASSERT_OK(InsertKP(k, kBothMiss));
   ASSERT_EQ(cache_->GetUsage(), last_size + k.size() + sizeof(DataEntry));
-  
+
   UniCacheAdaptHandle h = Lookup("a");
   ASSERT_EQ(h.state, kRecencyRealHit);
   Release(h);
@@ -886,43 +887,184 @@ TEST_F(UniCacheAdaptTest, GetSetAdaptLearningRate) {
   ASSERT_EQ(UniCacheAdapt::GetAdaptLearningRate(), 1 << 18);
 }
 
-std::string two_bytes_key(char k) {
-  return std::string(2, k);
-}
+std::string two_bytes_key(char k) { return std::string(2, k); }
 
 TEST_F(UniCacheAdaptTest, AdaptiveTest) {
   // Adjust amout = learning_rate * estimated_saved_io / charge
   // if we set learning_rate = 18 * 18 / 4 = 81
   // each time the adjust amoutn wil be 81 * 4 / 18 = 18.
-  // we make sure each 
+  // we make sure each
   UniCacheAdapt::SetAdaptLearningRate(81);
   ASSERT_EQ(UniCacheAdapt::GetAdaptLearningRate(), 81);
   // LRU   MRU | LRU  MRU | MRU     LRU | MRU      LRU     Target Recency Real
   // FreqGhost | FreqReal | RecencyReal | RecencyGhost     Cache Size
-  ASSERT_EQ(AccessKP(two_bytes_key('A')), kBothMiss); // _|_|A|_ Target 20
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kBothMiss);       // _|_|A|_ Target 20
   ASSERT_EQ(AccessKP(two_bytes_key('A')), kRecencyRealHit); // _|A|_|_ 20
-  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit); // _|A|_|_ 20
-  ASSERT_EQ(AccessKP(two_bytes_key('B')), kBothMiss); // _|A|B|_ 20
-  ASSERT_EQ(AccessKP(two_bytes_key('C')), kBothMiss); // _|A|C|B 20
-  ASSERT_EQ(AccessKP(two_bytes_key('B')), kRecencyGhostHit); // A|B|C|_ 38
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit);  // _|A|_|_ 20
+  ASSERT_EQ(AccessKP(two_bytes_key('B')), kBothMiss);          // _|A|B|_ 20
+  ASSERT_EQ(AccessKP(two_bytes_key('C')), kBothMiss);          // _|A|C|B 20
+  ASSERT_EQ(AccessKP(two_bytes_key('B')), kRecencyGhostHit);   // A|B|C|_ 38
   ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyGhostHit); // B|A|C|_ 20
   ASSERT_EQ(AccessKP(two_bytes_key('B')), kFrequencyGhostHit); // _|AB||C 2
-  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit); // _|BA||C 2
-  ASSERT_EQ(AccessKP(two_bytes_key('D')), kBothMiss); // _|BA||DC 2
-  ASSERT_EQ(AccessKP(two_bytes_key('D')), kRecencyGhostHit); // B|AD||C 20
-  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit); // B|DA||C 20
-  ASSERT_EQ(AccessKP(two_bytes_key('E')), kBothMiss); // D|A|E|C 20
-  ASSERT_EQ(AccessKP(two_bytes_key('C')), kRecencyGhostHit); // A|C|E|_ 38
-  ASSERT_EQ(AccessKP(two_bytes_key('F')), kBothMiss); // AC||FE| 38
-  ASSERT_EQ(AccessKP(two_bytes_key('E')), kRecencyRealHit); // AC|E|F| 38
-  ASSERT_EQ(AccessKP(two_bytes_key('E')), kFrequencyRealHit); // AC|E|F| 38
-  ASSERT_EQ(AccessKP(two_bytes_key('F')), kRecencyRealHit); // AC|EF|| 38
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit);  // _|BA||C 2
+  ASSERT_EQ(AccessKP(two_bytes_key('D')), kBothMiss);          // _|BA||DC 2
+  ASSERT_EQ(AccessKP(two_bytes_key('D')), kRecencyGhostHit);   // B|AD||C 20
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit);  // B|DA||C 20
+  ASSERT_EQ(AccessKP(two_bytes_key('E')), kBothMiss);          // D|A|E|C 20
+  ASSERT_EQ(AccessKP(two_bytes_key('C')), kRecencyGhostHit);   // A|C|E|_ 38
+  ASSERT_EQ(AccessKP(two_bytes_key('F')), kBothMiss);          // AC||FE| 38
+  ASSERT_EQ(AccessKP(two_bytes_key('E')), kRecencyRealHit);    // AC|E|F| 38
+  ASSERT_EQ(AccessKP(two_bytes_key('E')), kFrequencyRealHit);  // AC|E|F| 38
+  ASSERT_EQ(AccessKP(two_bytes_key('F')), kRecencyRealHit);    // AC|EF|| 38
   ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyGhostHit); // CE|FA||_ 20
-  ASSERT_EQ(AccessKP(two_bytes_key('D')), kBothMiss); // EF|A|D| 20
+  ASSERT_EQ(AccessKP(two_bytes_key('D')), kBothMiss);          // EF|A|D| 20
   ASSERT_EQ(AccessKP(two_bytes_key('F')), kFrequencyGhostHit); // E|AF||D 2
-  ASSERT_EQ(AccessKP(two_bytes_key('B')), kBothMiss); // |AF||BD 2
-  ASSERT_EQ(AccessKP(two_bytes_key('E')), kBothMiss); // |AF||EB 2
-  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit); // |FA||EB 2
+  ASSERT_EQ(AccessKP(two_bytes_key('B')), kBothMiss);          // |AF||BD 2
+  ASSERT_EQ(AccessKP(two_bytes_key('E')), kBothMiss);          // |AF||EB 2
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit);  // |FA||EB 2
+}
+
+TEST_F(UniCacheAdaptTest, AdaptiveTest2) {
+  UniCacheAdapt::SetAdaptLearningRate(1);
+  ASSERT_EQ(UniCacheAdapt::adapt_base_unit_size_square_, 1);
+
+  cache_->frequency_ghost_cache_->SetCapacity(cache_->total_capacity_);
+  cache_->recency_ghost_cache_->SetCapacity(cache_->total_capacity_);
+
+  Slice key("k");
+
+  { // recency ghost hit (larger), increasing, with speed factor = 1
+    cache_->frequency_ghost_cache_->Insert(
+        key, nullptr, 2, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(2, cache_->frequency_ghost_cache_->GetUsage());
+    cache_->recency_ghost_cache_->Insert(
+        key, nullptr, 4, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(4, cache_->recency_ghost_cache_->GetUsage());
+
+    size_t prev_target = cache_->target_recency_cache_capacity_;
+    cache_->AdjustTargetRecencyRealCacheSize(true /*increase_flag*/,
+                                             0 /*level*/, 4 /*charge*/);
+
+    /*saved_io / byte = 4 / 4 = 1. Here saved_io is 4 because of level 0 */
+    ASSERT_EQ(cache_->target_recency_cache_capacity_, prev_target + 1);
+
+    cache_->frequency_ghost_cache_->Erase(key);
+    cache_->recency_ghost_cache_->Erase(key);
+  }
+
+  { // recency ghost hit (smaller), increasing, with speed factor = |B2|/|B1|
+    cache_->frequency_ghost_cache_->Insert(
+        key, nullptr, 4, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(4, cache_->frequency_ghost_cache_->GetUsage());
+    cache_->recency_ghost_cache_->Insert(
+        key, nullptr, 2, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(2, cache_->recency_ghost_cache_->GetUsage());
+
+    size_t prev_target = cache_->target_recency_cache_capacity_;
+    cache_->AdjustTargetRecencyRealCacheSize(true /*increase_flag*/,
+                                             0 /*level*/, 4 /*charge*/);
+
+    /*saved_io / byte = 4 / 4 = 1. Here saved_io is 4 because of level 0 */
+    ASSERT_EQ(cache_->target_recency_cache_capacity_, prev_target + 2);
+
+    cache_->frequency_ghost_cache_->Erase(key);
+    cache_->recency_ghost_cache_->Erase(key);
+  }
+
+  { // freq ghost hit (larger), decreasing, with speed factor = 1
+    cache_->frequency_ghost_cache_->Insert(
+        key, nullptr, 4, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(4, cache_->frequency_ghost_cache_->GetUsage());
+    cache_->recency_ghost_cache_->Insert(
+        key, nullptr, 2, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(2, cache_->recency_ghost_cache_->GetUsage());
+
+    size_t prev_target = cache_->target_recency_cache_capacity_;
+    cache_->AdjustTargetRecencyRealCacheSize(false /*increase_flag*/,
+                                             0 /*level*/, 4 /*charge*/);
+
+    /*saved_io / byte = 4 / 4 = 1. Here saved_io is 4 because of level 0 */
+    ASSERT_EQ(cache_->target_recency_cache_capacity_, prev_target - 1);
+
+    cache_->frequency_ghost_cache_->Erase(key);
+    cache_->recency_ghost_cache_->Erase(key);
+  }
+
+  { // freq ghost hit (smaller) decreasing, with speed factor = |B1|/|B2|
+    cache_->frequency_ghost_cache_->Insert(
+        key, nullptr, 2, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(2, cache_->frequency_ghost_cache_->GetUsage());
+    cache_->recency_ghost_cache_->Insert(
+        key, nullptr, 4, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(4, cache_->recency_ghost_cache_->GetUsage());
+
+    size_t prev_target = cache_->target_recency_cache_capacity_;
+    cache_->AdjustTargetRecencyRealCacheSize(false /*increase_flag*/,
+                                             0 /*level*/, 4 /*charge*/);
+
+    /*saved_io / byte = 4 / 4 = 1. Here saved_io is 4 because of level 0 */
+    ASSERT_EQ(cache_->target_recency_cache_capacity_, prev_target - 2);
+
+    cache_->frequency_ghost_cache_->Erase(key);
+    cache_->recency_ghost_cache_->Erase(key);
+  }
+
+  {
+    // recency ghost hit (smaller), increasing, with speed factor = |B2|/|B1|,
+    // overflow
+    cache_->frequency_ghost_cache_->Insert(
+        key, nullptr, 35, &dumbDeleter, nullptr /*handle*/,
+        Cache::Priority::LOW, nullptr /*victims*/);
+    ASSERT_EQ(35, cache_->frequency_ghost_cache_->GetUsage());
+    cache_->recency_ghost_cache_->Insert(
+        key, nullptr, 1, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(1, cache_->recency_ghost_cache_->GetUsage());
+
+    cache_->AdjustTargetRecencyRealCacheSize(true /*increase_flag*/,
+                                             0 /*level*/, 4 /*charge*/);
+
+    /*saved_io / byte = 4 / 4 = 1. Here saved_io is 4 because of level 0 */
+    ASSERT_EQ(cache_->target_recency_cache_capacity_, cache_->total_capacity_);
+
+    cache_->frequency_ghost_cache_->Erase(key);
+    cache_->recency_ghost_cache_->Erase(key);
+  }
+
+  {
+    // freq ghost hit (smaller), increasing, with speed factor = |B1|/|B2|,
+    // underflow
+    cache_->frequency_ghost_cache_->Insert(
+        key, nullptr, 1, &dumbDeleter, nullptr /*handle*/, Cache::Priority::LOW,
+        nullptr /*victims*/);
+    ASSERT_EQ(1, cache_->frequency_ghost_cache_->GetUsage());
+    cache_->recency_ghost_cache_->Insert(
+        key, nullptr, 35, &dumbDeleter, nullptr /*handle*/,
+        Cache::Priority::LOW, nullptr /*victims*/);
+    ASSERT_EQ(35, cache_->recency_ghost_cache_->GetUsage());
+
+    cache_->AdjustTargetRecencyRealCacheSize(false /*increase_flag*/,
+                                             0 /*level*/, 4 /*charge*/);
+
+    /*saved_io / byte = 4 / 4 = 1. Here saved_io is 4 because of level 0 */
+    /* last time the usage is 40, so 40 - 35 = 5 */
+    ASSERT_EQ(cache_->target_recency_cache_capacity_, 5);
+
+    cache_->AdjustTargetRecencyRealCacheSize(false /*increase_flag*/,
+                                             0 /*level*/, 4 /*charge*/);
+    ASSERT_EQ(cache_->target_recency_cache_capacity_, 0);
+
+    cache_->frequency_ghost_cache_->Erase(key);
+    cache_->recency_ghost_cache_->Erase(key);
+  }
 }
 
 // As the ghost cache how takes virtual charge, the test

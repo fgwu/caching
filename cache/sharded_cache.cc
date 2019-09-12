@@ -146,7 +146,7 @@ std::string ShardedCache::GetPrintableOptions() const {
   return ret;
 }
 int GetDefaultCacheShardBits(size_t /*capacity*/) {
-  return 0;  // TODO(fwu): only use one shard for ease of impl
+  return 0; // TODO(fwu): only use one shard for ease of impl
   // int num_shard_bits = 0;
   // size_t min_shard_size = 512L * 1024L;  // Every shard is at least 512KB.
   // size_t num_shards = capacity / min_shard_size;
