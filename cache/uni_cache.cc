@@ -248,7 +248,7 @@ UniCacheAdapt::UniCacheAdapt(
                                          num_shard_bits, strict_capacity_limit);
 }
 
-void UniCacheAdapt::AdjustCapacity() {
+void UniCacheAdapt::AdjustCapacity(UniCacheAdaptArcState state) {
   size_t usage_frequency_real;
   size_t usage_recency_real;
   size_t usage_recency_ghost;
@@ -259,7 +259,8 @@ void UniCacheAdapt::AdjustCapacity() {
   // Shrink size of the *real caches* to the desired state.
   // whether to shrink recency_real or frequency_real depends on
   // the target_recency_real_cache_size
-  if (recency_real_cache_->GetUsage() > target_recency_cache_capacity_) {
+  if (recency_real_cache_->GetUsage() > target_recency_cache_capacity_ ||
+      state == kRecencyRealHit) {
     // evict from recency_real
 
     // a) fix frequency_real. The only limit is the total cache size.
@@ -301,7 +302,7 @@ void UniCacheAdapt::AdjustCapacity() {
 
   // d) handle the frequency_ghost cache, base on the usage of all others
   for (LRUHandle *frequency_real_victim : *frequency_real_victims) {
-    recency_ghost_cache_->Insert(
+    frequency_ghost_cache_->Insert(
         frequency_real_victim->key(), nullptr,
         frequency_real_victim->charge /*virtual charge*/, &DeleteGhostEntry,
         nullptr /*handle*/, Cache::Priority::LOW, nullptr /*evicted_handles*/);
@@ -313,8 +314,8 @@ void UniCacheAdapt::AdjustCapacity() {
 }
 
 Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
-                             const UniCacheAdaptArcState &state) {
-  if (state == kFrequencyRealHit) {
+                             UniCacheAdaptArcState prev_lookup_state) {
+  if (prev_lookup_state == kFrequencyRealHit) {
     // Case I.1 The item was already moved to MRU of Freq Real during
     // Lookup(), so nothing else has to be done.
     // the item was just hit in FrequencyRealCache, we need not
@@ -324,7 +325,8 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
 
   Status s;
   size_t charge = 0;
-
+  int level = data_entry->level();
+  
   // data_entry: calculate size charge
   assert(data_entry);
   switch (data_entry->data_type) {
@@ -357,7 +359,7 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
 
   // 2. Perform insertion and deletion as necessary
   std::shared_ptr<autovector<LRUHandle *>> victims;
-  switch (state) {
+  switch (prev_lookup_state) {
   case kFrequencyRealHit: // Case I.B Already handled above
     assert(0);
   case kRecencyRealHit: // Case I.A
@@ -373,6 +375,7 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
   }
   case kRecencyGhostHit: // Case II
   {
+    AdjustTargetRecencyRealCacheSize(true /*increase_flag*/, level, charge);
     recency_ghost_cache_->Erase(key);
     s = frequency_real_cache_->Insert(key, ptr, charge, &DeleteDataEntry,
                                       nullptr /*handle*/, Cache::Priority::LOW,
@@ -382,8 +385,9 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
     assert(victims->size() == 0);
     break;
   }
-  case kFrequencyGhostHit: // Case II*
+  case kFrequencyGhostHit: // Case III
   {
+    AdjustTargetRecencyRealCacheSize(false /*increase_flag*/, level, charge);
     frequency_ghost_cache_->Erase(key);
     s = frequency_real_cache_->Insert(key, ptr, charge, &DeleteDataEntry,
                                       nullptr /*handle*/, Cache::Priority::LOW,
@@ -407,7 +411,7 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
     assert(0);
   }
 
-  AdjustCapacity();
+  AdjustCapacity(prev_lookup_state);
 
   return s;
 }
@@ -482,8 +486,8 @@ void *UniCacheAdapt::Value(const UniCacheAdaptHandle &arc_handle) {
 }
 
 void UniCacheAdapt::Erase(const Slice &key,
-                          const UniCacheAdaptArcState &state) {
-  switch (state) {
+                          UniCacheAdaptArcState prev_lookup_state) {
+  switch (prev_lookup_state) {
   case kFrequencyRealHit:
     return frequency_real_cache_->Erase(key);
   case kRecencyRealHit:
@@ -498,8 +502,18 @@ void UniCacheAdapt::Erase(const Slice &key,
 }
 
 size_t UniCacheAdapt::GetCapacity() const {
+  assert(0);
+  // capacity does not mean anything here. It will be sometimes
+  // set to bigger and shink just for evictin purpose. So here
+  // we discourage any call on this fuction. See Insert().
+  // GetUsage() is more suitable to query the current cache size.
   return frequency_real_cache_->GetCapacity() +
          recency_real_cache_->GetCapacity();
+}
+
+size_t UniCacheAdapt::GetUsage() const {
+  return frequency_real_cache_->GetUsage() +
+         recency_real_cache_->GetUsage();
 }
 
 std::shared_ptr<UniCache>
@@ -507,6 +521,7 @@ NewUniCacheFix(size_t capacity, double kp_cache_ratio, int num_shard_bits,
                bool strict_capacity_limit, double /*high_pri_pool_ratio*/,
                std::shared_ptr<MemoryAllocator> memory_allocator,
                bool /*use_adaptive_mutex*/) {
+  assert(num_shard_bits == 0); // TODO(fwu): only use one shard for ease of impl
   if (num_shard_bits >= 20) {
     return nullptr; // the cache cannot be sharded into too many fine pieces
   }
@@ -525,6 +540,7 @@ NewUniCacheAdapt(size_t capacity, int num_shard_bits,
                  bool adaptive_size, double /*high_pri_pool_ratio*/,
                  std::shared_ptr<MemoryAllocator> memory_allocator,
                  bool /*use_adaptive_mutex*/) {
+  assert(num_shard_bits == 0); // TODO(fwu): only use one shard for ease of impl
   if (num_shard_bits >= 20) {
     return nullptr; // the cache cannot be sharded into too many fine pieces
   }

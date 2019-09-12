@@ -786,7 +786,7 @@ public:
   std::shared_ptr<UniCache> uni_cache_;
   UniCacheAdapt *cache_;
   UniCacheAdaptTest()
-      : uni_cache_(NewUniCacheAdapt(4096)),
+      : uni_cache_(NewUniCacheAdapt(40)),
         cache_(reinterpret_cast<UniCacheAdapt *>(uni_cache_.get())) {}
 
   Status InsertKV(const Slice &key, size_t value_size,
@@ -794,16 +794,17 @@ public:
     std::string value(value_size, 'a');
     std::shared_ptr<DataEntry> entry = std::make_shared<DataEntry>();
     entry->InitNew(kKV);
-    entry->kv_entry()->level = 1;
+    entry->kv_entry()->level = 0;
     //    entry->kv_entry()->get_context_replay_log.assign(std::move(value));
     entry->kv_entry()->get_context_replay_log.assign(std::move(value));
     return cache_->Insert(key, entry.get(), state);
   }
 
-  Status InsertKP(const Slice &key, const UniCacheAdaptArcState &state) {
+  Status InsertKP(const Slice &key, UniCacheAdaptArcState state) {
     std::shared_ptr<DataEntry> entry = std::make_shared<DataEntry>();
     entry->InitNew(kKP);
     entry->kp_entry()->block_handle = BlockHandle(1, 1);
+    entry->kp_entry()->file_pointer.level = 0;
     return cache_->Insert(key, entry.get(), state);
   }
 
@@ -811,6 +812,19 @@ public:
     return cache_->Lookup(key, stats);
   }
 
+  UniCacheAdaptArcState AccessKP(const Slice &key) {
+    UniCacheAdaptHandle handle = Lookup(key);
+    UniCacheAdaptArcState lookup_state = handle.state;
+    if (lookup_state != kBothMiss) {
+      cache_->Release(handle);
+    }
+    Status s = InsertKP(key, lookup_state);
+    assert(s.ok());
+    std::cout << "key(\"" << key.ToString() << "\") target="
+	      << cache_->GetTargetRecnecyRealCacheSize() << "\n";
+    return lookup_state;
+  }
+  
   bool Release(const UniCacheAdaptHandle &arc_handle,
                bool force_erase = false) {
     return cache_->Release(arc_handle, force_erase);
@@ -820,7 +834,23 @@ public:
 TEST_F(UniCacheAdaptTest, BasicTest) {
   UniCacheAdaptArcState s = kBothMiss;
   // first appearance,insert to RecencyRealCache
-  ASSERT_OK(InsertKV("a", 3, s));
+  std::string str = "a";
+  size_t value_size = 2;
+  Slice k(str);
+  ASSERT_OK(InsertKV(k, value_size, s));
+
+  std::cout << k.size() << "\n";
+  std::cout << sizeof(DataEntry) << "\n";
+  std::cout << cache_->GetUsage() << "\n";
+
+  ASSERT_EQ(cache_->GetUsage(), k.size() + sizeof(DataEntry) + value_size);
+
+  size_t last_size = cache_->GetUsage();
+  k = "b";
+  s = kBothMiss;
+  ASSERT_OK(InsertKP(k, kBothMiss));
+  ASSERT_EQ(cache_->GetUsage(), last_size + k.size() + sizeof(DataEntry));
+  
   UniCacheAdaptHandle h = Lookup("a");
   ASSERT_EQ(h.state, kRecencyRealHit);
   Release(h);
@@ -829,7 +859,7 @@ TEST_F(UniCacheAdaptTest, BasicTest) {
 TEST_F(UniCacheAdaptTest, RecencyRealPromoteToFrequencyReal) {
   UniCacheAdaptArcState s = kBothMiss;
   // first appearance,insert to RecencyRealCache
-  ASSERT_OK(InsertKV("a", 3, s));
+  ASSERT_OK(InsertKV("a", 1, s));
   UniCacheAdaptHandle h = Lookup("a");
   ASSERT_EQ(h.state, kRecencyRealHit);
   Release(h);
@@ -837,14 +867,14 @@ TEST_F(UniCacheAdaptTest, RecencyRealPromoteToFrequencyReal) {
   // caller insert the item back again, using the last status
   // this time it will be removed from RecencyRealCache to
   // FrequencyRealCache
-  ASSERT_OK(InsertKV("a", 3, h.state));
+  ASSERT_OK(InsertKV("a", 1, h.state));
   h = Lookup("a");
   ASSERT_EQ(h.state, kFrequencyRealHit);
   Release(h);
 
   // caller insert the item back yet again
   // this time it will remain at FrequencyRealCache
-  ASSERT_OK(InsertKV("a", 3, h.state));
+  ASSERT_OK(InsertKV("a", 1, h.state));
   h = Lookup("a");
   ASSERT_EQ(h.state, kFrequencyRealHit);
   Release(h);
@@ -854,6 +884,45 @@ TEST_F(UniCacheAdaptTest, GetSetAdaptLearningRate) {
   ASSERT_EQ(UniCacheAdapt::GetAdaptLearningRate(), 1 << 16);
   UniCacheAdapt::SetAdaptLearningRate(1 << 18);
   ASSERT_EQ(UniCacheAdapt::GetAdaptLearningRate(), 1 << 18);
+}
+
+std::string two_bytes_key(char k) {
+  return std::string(2, k);
+}
+
+TEST_F(UniCacheAdaptTest, AdaptiveTest) {
+  // Adjust amout = learning_rate * estimated_saved_io / charge
+  // if we set learning_rate = 18 * 18 / 4 = 81
+  // each time the adjust amoutn wil be 81 * 4 / 18 = 18.
+  // we make sure each 
+  UniCacheAdapt::SetAdaptLearningRate(81);
+  ASSERT_EQ(UniCacheAdapt::GetAdaptLearningRate(), 81);
+  // LRU   MRU | LRU  MRU | MRU     LRU | MRU      LRU     Target Recency Real
+  // FreqGhost | FreqReal | RecencyReal | RecencyGhost     Cache Size
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kBothMiss); // _|_|A|_ Target 20
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kRecencyRealHit); // _|A|_|_ 20
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit); // _|A|_|_ 20
+  ASSERT_EQ(AccessKP(two_bytes_key('B')), kBothMiss); // _|A|B|_ 20
+  ASSERT_EQ(AccessKP(two_bytes_key('C')), kBothMiss); // _|A|C|B 20
+  ASSERT_EQ(AccessKP(two_bytes_key('B')), kRecencyGhostHit); // A|B|C|_ 38
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyGhostHit); // B|A|C|_ 20
+  ASSERT_EQ(AccessKP(two_bytes_key('B')), kFrequencyGhostHit); // _|AB||C 2
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit); // _|BA||C 2
+  ASSERT_EQ(AccessKP(two_bytes_key('D')), kBothMiss); // _|BA||DC 2
+  ASSERT_EQ(AccessKP(two_bytes_key('D')), kRecencyGhostHit); // B|AD||C 20
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit); // B|DA||C 20
+  ASSERT_EQ(AccessKP(two_bytes_key('E')), kBothMiss); // D|A|E|C 20
+  ASSERT_EQ(AccessKP(two_bytes_key('C')), kRecencyGhostHit); // A|C|E|_ 38
+  ASSERT_EQ(AccessKP(two_bytes_key('F')), kBothMiss); // AC||FE| 38
+  ASSERT_EQ(AccessKP(two_bytes_key('E')), kRecencyRealHit); // AC|E|F| 38
+  ASSERT_EQ(AccessKP(two_bytes_key('E')), kFrequencyRealHit); // AC|E|F| 38
+  ASSERT_EQ(AccessKP(two_bytes_key('F')), kRecencyRealHit); // AC|EF|| 38
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyGhostHit); // CE|FA||_ 20
+  ASSERT_EQ(AccessKP(two_bytes_key('D')), kBothMiss); // EF|A|D| 20
+  ASSERT_EQ(AccessKP(two_bytes_key('F')), kFrequencyGhostHit); // E|AF||D 2
+  ASSERT_EQ(AccessKP(two_bytes_key('B')), kBothMiss); // |AF||BD 2
+  ASSERT_EQ(AccessKP(two_bytes_key('E')), kBothMiss); // |AF||EB 2
+  ASSERT_EQ(AccessKP(two_bytes_key('A')), kFrequencyRealHit); // |FA||EB 2
 }
 
 // As the ghost cache how takes virtual charge, the test

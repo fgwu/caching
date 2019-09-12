@@ -78,7 +78,7 @@ struct DataEntry {
   }
 
   FilePointerAndBlockHandle *kp_entry() {
-    assert(data_type == kKV);
+    assert(data_type == kKP);
     return reinterpret_cast<FilePointerAndBlockHandle *>(entry);
   }
 
@@ -213,7 +213,7 @@ public:
   virtual const char *Name() const override { return "UniCacheAdapt"; }
 
   virtual Status Insert(const Slice &uni_key, DataEntry *data_entry,
-                        const UniCacheAdaptArcState &state);
+                        UniCacheAdaptArcState state);
 
   virtual UniCacheAdaptHandle Lookup(const Slice &key,
                                      Statistics *stats = nullptr);
@@ -223,9 +223,11 @@ public:
 
   virtual void *Value(const UniCacheAdaptHandle &arc_handle);
 
-  virtual void Erase(const Slice &key, const UniCacheAdaptArcState &state);
+  virtual void Erase(const Slice &key, UniCacheAdaptArcState state);
 
   virtual size_t GetCapacity() const override;
+  
+  virtual size_t GetUsage() const;
 
   virtual bool AdaptiveSupported() override { return true; }
 
@@ -239,11 +241,13 @@ public:
 
   static size_t GetAdaptLearningRate() { return adapt_base_unit_size_square_; }
 
-private:
-  // the size is adjusted after each ghost hit.
-  inline void AdjustSize() {}
+  size_t GetTargetRecnecyRealCacheSize() {
+    return target_recency_cache_capacity_;
+  }
 
-  static inline size_t AdjustAmount(int level, size_t charge) {
+private:
+  void AdjustTargetRecencyRealCacheSize(bool increase_flag, int level,
+					size_t charge ) {
     // E.g. level = 3. The get will have travel L0 .. L3
     // L0 suppose has 8 SSTs, then
     // Saved I/O = L0 + L1 + L2 + L3 = 8 + 1 + 1 + 1.
@@ -252,11 +256,50 @@ private:
     // Saved I/O = 8/2 = 4;
     int estimated_saved_io = level ? (level + 8) : 4;
 
+    double speedup_factor = 1;
+    if (increase_flag) {
+      // we are increaing recency_real. If recency_ghost is alreay small
+      // we are going to speed up the learning
+      speedup_factor =
+	std::max(speedup_factor, 1.0 * frequency_ghost_cache_->GetUsage()
+	       / recency_ghost_cache_->GetUsage());
+    } else {
+      // we are decreasing recency_real. If recency_ghost is already large
+      // we are going to speed up the learning
+      speedup_factor =
+	std::max(speedup_factor, 1.0 * recency_ghost_cache_->GetUsage()
+	       / frequency_ghost_cache_->GetUsage());
+    }
+    
     // kAdaptBaseUnitSize * estimiated_saved_io / (charge / kAdaptBaseUnitSize)
-    return adapt_base_unit_size_square_ * estimated_saved_io / charge;
+    size_t adjust_amount = speedup_factor *  adapt_base_unit_size_square_
+      * estimated_saved_io / charge;
+  
+    if (increase_flag) {
+      target_recency_cache_capacity_ =
+	std::min(total_capacity_,
+		 target_recency_cache_capacity_ + adjust_amount);
+    } else {
+      target_recency_cache_capacity_ =
+	std::max(adjust_amount, target_recency_cache_capacity_)
+	- adjust_amount;
+    }
   }
 
-  void AdjustCapacity();
+  // static inline size_t AdjustAmount(int level, size_t charge) {
+  //   // E.g. level = 3. The get will have travel L0 .. L3
+  //   // L0 suppose has 8 SSTs, then
+  //   // Saved I/O = L0 + L1 + L2 + L3 = 8 + 1 + 1 + 1.
+  //   // E.g. level = 0 we estimate half of the L0 will be traveled
+  //   // suppose L0 has 8 SSTs, then
+  //   // Saved I/O = 8/2 = 4;
+  //   int estimated_saved_io = level ? (level + 8) : 4;
+
+  //   // kAdaptBaseUnitSize * estimiated_saved_io / (charge / kAdaptBaseUnitSize)
+  //   return adapt_base_unit_size_square_ * estimated_saved_io / charge;
+  // }
+
+  void AdjustCapacity(UniCacheAdaptArcState state);
 
   std::shared_ptr<LRUCache> frequency_real_cache_;
   std::shared_ptr<LRUCache> recency_real_cache_;
