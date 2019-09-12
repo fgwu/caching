@@ -189,10 +189,8 @@ Status BuildTable(
       const ParsedInternalKey &ikey = c_iter.ikey();
       if (ioptions.uni_cache) {
         if (ioptions.uni_cache->AdaptiveSupported()) {
-          assert(0); // TODO(fwu): not implemented
-        } else {
-          UniCacheFix *uni_cache_fix =
-              reinterpret_cast<UniCacheFix *>(ioptions.uni_cache.get());
+          UniCacheAdapt *uni_cache_adapt =
+              reinterpret_cast<UniCacheAdapt *>(ioptions.uni_cache.get());
           if (ikey.user_key.ToString() != last_user_key) {
             // only handles the newest user_key
             // if this key == last user key, discard. becuase cache only store
@@ -220,13 +218,84 @@ Status BuildTable(
             switch (ikey.type) {
             case kTypeDeletion:
             case kTypeSingleDeletion:
+              uni_cache_adapt->Erase(uni_cache_key.GetUserKey(), kAllErase);
+              break;
+            case kTypeValue: {
+              // only populate the key that is already cached.
+              auto handle = uni_cache_adapt->Lookup(uni_cache_key.GetUserKey());
+              if (handle.state == kFrequencyRealHit ||
+                  handle.state == kRecencyRealHit) {
+                auto data_type = static_cast<const DataEntry *>(
+                                     uni_cache_adapt->Value(handle))
+                                     ->data_type;
+
+                uni_cache_adapt->Release(handle);
+                uni_cache_adapt->Erase(uni_cache_key.GetUserKey(),
+                                       handle.state);
+
+                if (data_type == kKP) {
+                  // TODO(fwu): repopulate KP cache if found in KP cache
+                  break;
+                }
+
+                assert(data_type == kKV);
+
+                DataEntry data_entry_buffer;
+                data_entry_buffer.InitNew(kKV);
+                data_entry_buffer.kv_entry()->level = 0; // L0 table
+                std::string &replay_log =
+                    data_entry_buffer.kv_entry()->get_context_replay_log;
+                appendToReplayLog(&replay_log, ikey.type, value);
+
+                uni_cache_adapt->InsertInPlace(uni_cache_key.GetUserKey(),
+                                               &data_entry_buffer,
+                                               handle.state);
+              }
+            } break;
+            default:
+              /* do nothing. KV cache does not support them */
+              assert(0); // not implemented.
+            }
+            last_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
+          }
+        } else {
+          UniCacheFix *uni_cache_fix =
+              reinterpret_cast<UniCacheFix *>(ioptions.uni_cache.get());
+          if (ikey.user_key.ToString() != last_user_key) {
+            // only handles the newest user_key
+            // if this key == last user key, discard. becuase cache only store
+            // the latest one.
+            IterKey uni_cache_key;
+            // KV/KP lookup_key = cf_id | seqno | user_key.
+            // we append the sequence number (incremented by 1 to
+            // distinguish from 0) only in this case.
+
+            // adding cf_id
+            char encode_buf[10];
+            auto ptr = EncodeVarint32(encode_buf, column_family_id);
+            uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                                     ptr - encode_buf);
+            // adding seq_no. Note that we only keep the lastest one and do
+            // not repopulate the cached older version for snapshots.
+            // TODO(fgwu): adding snapshot support.
+            uint64_t seq_no = 0;
+            ptr = EncodeVarint64(encode_buf, seq_no);
+            uni_cache_key.TrimAppend(uni_cache_key.Size(), encode_buf,
+                                     ptr - encode_buf);
+            // adding the key itself
+            uni_cache_key.TrimAppend(uni_cache_key.Size(), ikey.user_key.data(),
+                                     ikey.user_key.size());
+            switch (ikey.type) {
+            case kTypeDeletion:
+            case kTypeSingleDeletion:
               uni_cache_fix->Erase(kKV, uni_cache_key.GetUserKey());
               uni_cache_fix->Erase(kKP, uni_cache_key.GetUserKey());
               break;
             case kTypeValue: {
               // only populate the key that is already cached.
               // TODO(fwu): repopulate KP cache if found in KP cache
-              if (uni_cache_fix->Lookup(kKV, uni_cache_key.GetUserKey())) {
+              if (auto handle =
+                      uni_cache_fix->Lookup(kKV, uni_cache_key.GetUserKey())) {
                 // construct value
                 std::string kv_cache_entry;
                 appendToReplayLog(&kv_cache_entry, ikey.type, value);
@@ -236,6 +305,7 @@ Status BuildTable(
                 uni_cache_fix->Insert(
                     kKV, uni_cache_key.GetUserKey(), row_ptr, charge, level,
                     &DeleteKVEntry); // update if already exist
+                uni_cache_fix->Release(kKV, handle);
               }
               // TODO(fwu): repopulate KP cache if found in KP cache
               uni_cache_fix->Erase(kKP, uni_cache_key.GetUserKey());

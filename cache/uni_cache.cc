@@ -311,6 +311,17 @@ void UniCacheAdapt::AdjustCapacity(UniCacheAdaptArcState state) {
   frequency_ghost_cache_->SetCapacity(total_capacity_ * 2 -
                                       usage_frequency_real -
                                       usage_recency_real - usage_recency_ghost);
+
+  // now every cache has been settled down. Adjust the capacity to the usage
+  frequency_real_cache_->SetCapacity(usage_frequency_real);
+  recency_real_cache_->SetCapacity(usage_recency_real);
+  recency_ghost_cache_->SetCapacity(usage_recency_ghost);
+
+  assert(frequency_real_cache_->GetCapacity() +
+             recency_real_cache_->GetCapacity() +
+             frequency_ghost_cache_->GetCapacity() +
+             recency_ghost_cache_->GetCapacity() ==
+         total_capacity_ * 2);
 }
 
 Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
@@ -416,6 +427,56 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
   return s;
 }
 
+// used during flush, where a new KV is replacing the old KV.
+// the newly create DataEntry will be inserted to the old cache.
+Status UniCacheAdapt::InsertInPlace(const Slice &key, DataEntry *data_entry,
+                                    UniCacheAdaptArcState prev_lookup_state) {
+  if (prev_lookup_state != kFrequencyRealHit &&
+      prev_lookup_state != kRecencyRealHit) {
+    assert(0);
+  }
+  assert(data_entry->data_type == kKV);
+
+  Status s;
+  size_t charge = key.size() + sizeof(DataEntry) +
+                  data_entry->kv_entry()->get_context_replay_log.size();
+
+  void *ptr = new DataEntry(std::move(*data_entry));
+
+  if (prev_lookup_state == kFrequencyRealHit) {
+    std::shared_ptr<autovector<LRUHandle *>> frequency_real_victims;
+
+    s = frequency_real_cache_->Insert(key, ptr, charge, &DeleteDataEntry,
+                                      nullptr /*handle*/, Cache::Priority::LOW,
+                                      &frequency_real_victims);
+    for (LRUHandle *frequency_real_victim : *frequency_real_victims) {
+      frequency_ghost_cache_->Insert(
+          frequency_real_victim->key(), nullptr,
+          frequency_real_victim->charge /*virtual charge*/, &DeleteGhostEntry,
+          nullptr /*handle*/, Cache::Priority::LOW,
+          nullptr /*evicted_handles*/);
+      frequency_real_victim->Free();
+    }
+  } else if (prev_lookup_state == kRecencyRealHit) {
+    std::shared_ptr<autovector<LRUHandle *>> recency_real_victims;
+
+    s = recency_real_cache_->Insert(key, ptr, charge, &DeleteDataEntry,
+                                    nullptr /*handle*/, Cache::Priority::LOW,
+                                    &recency_real_victims);
+    for (LRUHandle *recency_real_victim : *recency_real_victims) {
+      recency_ghost_cache_->Insert(
+          recency_real_victim->key(), nullptr,
+          recency_real_victim->charge /*virtual charge*/, &DeleteGhostEntry,
+          nullptr /*handle*/, Cache::Priority::LOW,
+          nullptr /*evicted_handles*/);
+      recency_real_victim->Free();
+    }
+  } else {
+    assert(0);
+  }
+  return s;
+}
+
 UniCacheAdaptHandle UniCacheAdapt::Lookup(const Slice &key, Statistics *stats) {
   Cache::Handle *handle = nullptr;
 
@@ -489,27 +550,31 @@ void UniCacheAdapt::Erase(const Slice &key,
                           UniCacheAdaptArcState prev_lookup_state) {
   switch (prev_lookup_state) {
   case kFrequencyRealHit:
-    return frequency_real_cache_->Erase(key);
+    frequency_real_cache_->Erase(key);
+    return;
   case kRecencyRealHit:
-    return recency_real_cache_->Erase(key);
+    recency_real_cache_->Erase(key);
+    return;
   case kFrequencyGhostHit:
+    frequency_ghost_cache_->Erase(key);
+    return;
   case kRecencyGhostHit:
+    recency_ghost_cache_->Erase(key);
+    return;
   case kBothMiss:
     assert(0);
+  case kAllErase:
+    frequency_real_cache_->Erase(key);
+    recency_real_cache_->Erase(key);
+    frequency_ghost_cache_->Erase(key);
+    recency_ghost_cache_->Erase(key);
+    return;
   default:
     assert(0);
   }
 }
 
-size_t UniCacheAdapt::GetCapacity() const {
-  assert(0);
-  // capacity does not mean anything here. It will be sometimes
-  // set to bigger and shink just for evictin purpose. So here
-  // we discourage any call on this fuction. See Insert().
-  // GetUsage() is more suitable to query the current cache size.
-  return frequency_real_cache_->GetCapacity() +
-         recency_real_cache_->GetCapacity();
-}
+size_t UniCacheAdapt::GetCapacity() const { return total_capacity_; }
 
 size_t UniCacheAdapt::GetUsage() const {
   return frequency_real_cache_->GetUsage() + recency_real_cache_->GetUsage();

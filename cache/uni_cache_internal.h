@@ -130,6 +130,7 @@ enum UniCacheAdaptArcState {
   kRecencyRealHit = 2,
   kFrequencyGhostHit = 3,
   kRecencyGhostHit = 4,
+  kAllErase = 5, /*used in UniCacheAdapt::Erase.*/
 };
 
 struct UniCacheAdaptHandle {
@@ -216,6 +217,9 @@ public:
 
   virtual Status Insert(const Slice &uni_key, DataEntry *data_entry,
                         UniCacheAdaptArcState state);
+
+  virtual Status InsertInPlace(const Slice &uni_key, DataEntry *data_entry,
+                               UniCacheAdaptArcState state);
 
   virtual UniCacheAdaptHandle Lookup(const Slice &key,
                                      Statistics *stats = nullptr);

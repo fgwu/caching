@@ -6175,6 +6175,23 @@ TEST_F(DBTest, UniCacheFixKVKP) {
   ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
 }
 
+TEST_F(DBTest, UniCacheAdapt) {
+  Options options = CurrentOptions();
+  options.statistics = rocksdb::CreateDBStatistics();
+  options.uni_cache = NewUniCacheAdapt(8192);
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("foo1", "bar1"));
+  ASSERT_OK(Put("foo2", "bar2"));
+  ASSERT_OK(Flush());
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 0);
+}
+
 TEST_F(DBTest, PinnableSliceAndRowCache) {
   Options options = CurrentOptions();
   options.statistics = rocksdb::CreateDBStatistics();
