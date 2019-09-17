@@ -6190,6 +6190,206 @@ TEST_F(DBTest, UniCacheAdapt) {
   ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 0);
   ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
   ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 0);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 0);
+
+  // first time, cache <foo1, bar1> in KP
+  ASSERT_EQ(Get("foo1"), "bar1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 1);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 1);
+
+  // KP hit, promote <foo1, bar1> to KV
+  ASSERT_EQ(Get("foo1"), "bar1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 1);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 1);
+
+  // KV hit <foo1, bar1>.
+  ASSERT_EQ(Get("foo1"), "bar1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 1);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 1);
+
+  // KV hit <foo1, bar1> again.
+  ASSERT_EQ(Get("foo1"), "bar1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 1);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 1);
+
+  // first time <foo2, bar2>, cache to KP
+  ASSERT_EQ(Get("foo2"), "bar2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 2);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 2);
+
+  // update <foo, bar> to <foo, baz>
+  // cache stats should not change, because they are served
+  // by mem table.
+  ASSERT_OK(Put("foo1", "baz1"));
+  ASSERT_OK(Put("foo2", "baz2"));
+  ASSERT_EQ(Get("foo1"), "baz1");
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 2);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 2);
+
+  ASSERT_OK(Flush());
+  // <foo1 baz1> hit on KV, it's repopulated
+  ASSERT_EQ(Get("foo1"), "baz1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 2);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 3);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 2);
+
+  // miss on both KV and KP. as the KP entry is deleted duing comopaction
+  // the miss will bing <foo2 baz2> to KP. RecencyReal
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 3);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 4);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 3);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 3);
+
+  ASSERT_OK(Put("foo3", "bar3"));
+  ASSERT_OK(Flush());
+  Compact(nullptr, nullptr);
+
+  // hit on KV, as compaction does not affect KV cache
+  ASSERT_EQ(Get("foo1"), "baz1");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 4);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 4);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 0);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 4);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 1);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 3);
+
+  // hit on KP. but its invalid as compaction as already deleted
+  // the original file, so the KP entry is invalid
+  // read it from SST and and bring it to KV (promoted)
+  // also previous it is in RecencyReal, now promote it to FreqReal
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 4);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 5);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 4);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 3);
+
+  // should hit on KV, and in FreqReal
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 5);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 5);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 5);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 3);
+
+  // should hit on KV, and in FreqReal, as it is promoted to KV
+  ASSERT_EQ(Get("foo2"), "baz2");
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_HIT), 6);
+  ASSERT_EQ(TestGetTickerCount(options, KV_CACHE_MISS), 5);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_VALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_HIT_INVALID), 1);
+  ASSERT_EQ(TestGetTickerCount(options, KP_CACHE_MISS), 3);
+
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_REAL_HIT), 6);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_REAL_HIT), 2);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_FREQUENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_RECENCY_GHOST_HIT), 0);
+  ASSERT_EQ(TestGetTickerCount(options, ARC_BOTH_MISS), 3);
 }
 
 TEST_F(DBTest, PinnableSliceAndRowCache) {

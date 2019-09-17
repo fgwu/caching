@@ -232,6 +232,13 @@ enum Tickers : uint32_t {
   KP_CACHE_HIT_INVALID,
   KP_CACHE_MISS,
 
+  // Universal cache arc stats
+  ARC_FREQUENCY_REAL_HIT,
+  ARC_RECENCY_REAL_HIT,
+  ARC_FREQUENCY_GHOST_HIT,
+  ARC_RECENCY_GHOST_HIT,
+  ARC_BOTH_MISS,
+
   // Read amplification statistics.
   // Read amplification can be calculated using this formula
   // (READ_AMP_TOTAL_READ_BYTES / READ_AMP_ESTIMATE_USEFUL_BYTES)

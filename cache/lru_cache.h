@@ -312,10 +312,11 @@ class LRUCache
   virtual size_t GetCharge(Handle* handle) const override;
   virtual uint32_t GetHash(Handle* handle) const override;
   virtual void DisownData() override;
-  Status Insert(const Slice &key, void *value, size_t charge,
-                void (*deleter)(const Slice &key, void *value), Handle **handle,
-                Priority priority,
-                std::shared_ptr<autovector<LRUHandle *>> *evicted_handles);
+  Status
+  Insert(const Slice &key, void *value, size_t charge,
+         void (*deleter)(const Slice &key, void *value), Handle **handle,
+         Priority priority,
+         std::shared_ptr<autovector<LRUHandle *>> *evicted_handles = nullptr);
   void SetCapacity(
       size_t capacity,
       std::shared_ptr<autovector<LRUHandle *>> *evicted_handles = nullptr) {

@@ -356,10 +356,6 @@ Status UniCacheAdapt::Insert(const Slice &key, DataEntry *data_entry,
 
   void *ptr = new DataEntry(std::move(*data_entry));
 
-  // sanity check on the UniCache components
-  assert(frequency_real_cache_->GetCapacity() > 0);
-  assert(recency_real_cache_->GetCapacity() > 0);
-
   // 1. Enlarge Capacity first. The size will be adjust adaptively (shrink)
   // later in AdjustSize()
   size_t large_capacity = total_capacity_ * 3;
@@ -522,9 +518,8 @@ bool UniCacheAdapt::Release(const UniCacheAdaptHandle &arc_handle,
   case kRecencyGhostHit:
     // we do not have to release any resource, as ghost cache entry
     // has released at Lookup() already.
+  case kBothMiss: // nothing ot release
     return true;
-  case kBothMiss:
-    assert(0);
   default:
     assert(0);
   }

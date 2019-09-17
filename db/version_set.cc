@@ -2025,6 +2025,26 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
 
     arc_handle = uni_cache_adapt->Lookup(uni_cache_key.GetUserKey());
 
+    switch (arc_handle.state) {
+    case kFrequencyRealHit:
+      RecordTick(db_statistics_, ARC_FREQUENCY_REAL_HIT);
+      break;
+    case kRecencyRealHit:
+      RecordTick(db_statistics_, ARC_RECENCY_REAL_HIT);
+      break;
+    case kFrequencyGhostHit:
+      RecordTick(db_statistics_, ARC_FREQUENCY_GHOST_HIT);
+      break;
+    case kRecencyGhostHit:
+      RecordTick(db_statistics_, ARC_RECENCY_GHOST_HIT);
+      break;
+    case kBothMiss:
+      RecordTick(db_statistics_, ARC_BOTH_MISS);
+      break;
+    default:
+      assert(0);
+    }
+
     if (arc_handle.handle) {
       assert(arc_handle.state == kFrequencyRealHit ||
              arc_handle.state == kRecencyRealHit);
@@ -2062,10 +2082,13 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
     replayGetContextLog(found_data_entry->kv_entry()->get_context_replay_log,
                         user_key, &get_context, &value_pinner);
 
+    RecordTick(db_statistics_, KV_CACHE_HIT);
     if (db_statistics_ != nullptr) {
       get_context.ReportCounters();
     }
     return;
+  } else {
+    RecordTick(db_statistics_, KV_CACHE_MISS);
   }
 
   FilePicker fp(
@@ -2080,14 +2103,19 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
     // current only kKP goes to Recency, and kKV goes to kKV
     assert(arc_handle.state == kRecencyRealHit);
     assert(!found_data_entry->kp_entry()->block_handle.IsNull());
+    RecordTick(db_statistics_, KP_CACHE_HIT);
     if ((f = fp.GetFileFromPointer(
              &found_data_entry->kp_entry()->file_pointer)) != nullptr) {
       found_kp_entry_valid = true;
+      RecordTick(db_statistics_, KP_CACHE_HIT_VALID);
     } else {
       // file no longer exists, the cache kp is no longer valid. Erase it.
       uni_cache_adapt->Erase(uni_cache_key.GetUserKey(), arc_handle.state);
       found_kp_entry_valid = false;
+      RecordTick(db_statistics_, KP_CACHE_HIT_INVALID);
     }
+  } else {
+    RecordTick(db_statistics_, KP_CACHE_MISS);
   }
 
   if (!f) {
@@ -2108,10 +2136,10 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
   case kRecencyRealHit:
   case kFrequencyGhostHit:
   case kRecencyGhostHit:
-    data_entry_to_insert->data_type = kKV;
+    data_entry_to_insert->InitNew(kKV);
     break;
   case kBothMiss:
-    data_entry_to_insert->data_type = kKP;
+    data_entry_to_insert->InitNew(kKP);
     break;
   default:
     assert(0);
@@ -2123,7 +2151,8 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
   // the SetBlockHandle function. becaused the cached DataEntry is const,
   // but the parameter SetBlockHandle takes requires not const.
   BlockHandle copy_of_block_handle(
-      data_entry_to_insert->data_type == kKP
+      (found_data_entry && found_data_entry->data_type == kKP &&
+       found_kp_entry_valid)
           ? found_data_entry->kp_entry()->block_handle
           : BlockHandle::NullBlockHandle());
   BlockHandle *block_handle = nullptr;

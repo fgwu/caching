@@ -83,7 +83,7 @@ struct DataEntry {
   }
 
   const FilePointerAndBlockHandle *kp_entry() const {
-    assert(data_type == kKV);
+    assert(data_type == kKP);
     return reinterpret_cast<FilePointerAndBlockHandle *>(entry);
   }
 
