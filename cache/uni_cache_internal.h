@@ -98,6 +98,7 @@ struct DataEntry {
     default:
       assert(0);
     }
+    return 0;
   }
 
   void InitNew(UniCacheEntryType _data_type) {

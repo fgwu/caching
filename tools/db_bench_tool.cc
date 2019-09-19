@@ -495,6 +495,8 @@ DEFINE_double(uni_cache_kp_ratio, 0,
               "0 means no KP cache, and the UniCache space is used "
               "as KV cache.");
 
+DEFINE_bool(uni_cache_adapt, true, "If true, use UniCacheAdapt");
+
 DEFINE_int32(open_files, rocksdb::Options().max_open_files,
              "Maximum number of files to keep open at the same time"
              " (use default if == 0)");
@@ -3705,13 +3707,23 @@ class Benchmark {
       }
     }
     if (FLAGS_uni_cache_size) {
-      if (FLAGS_cache_numshardbits >= 1) {
-        options.uni_cache =
-            NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_uni_cache_kp_ratio,
-                           FLAGS_cache_numshardbits);
+      assert(FLAGS_cache_numshardbits == 1);
+      if (FLAGS_uni_cache_adapt) {
+        if (FLAGS_cache_numshardbits >= 1) {
+          options.uni_cache =
+              NewUniCacheAdapt(FLAGS_uni_cache_size, FLAGS_cache_numshardbits);
+        } else {
+          options.uni_cache = NewUniCacheAdapt(FLAGS_uni_cache_size);
+        }
       } else {
-        options.uni_cache =
-            NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_uni_cache_kp_ratio);
+        if (FLAGS_cache_numshardbits >= 1) {
+          options.uni_cache =
+              NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_uni_cache_kp_ratio,
+                             FLAGS_cache_numshardbits);
+        } else {
+          options.uni_cache =
+              NewUniCacheFix(FLAGS_uni_cache_size, FLAGS_uni_cache_kp_ratio);
+        }
       }
     }
     if (FLAGS_enable_io_prio) {

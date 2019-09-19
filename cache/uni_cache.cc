@@ -14,8 +14,8 @@ static void DeleteDataEntry(const Slice & /*key*/, void *value) {
   delete typed_value;
 }
 
-static void DeleteGhostEntry(const Slice & /*key*/, void *value) {
-  assert(!value);
+static void DeleteGhostEntry(const Slice & /*key*/, void * /*value*/) {
+  //  assert(!value);
   // not any value stored. nothing needs to be deleted.
 }
 
@@ -50,40 +50,35 @@ Status UniCacheFix::Insert(UniCacheEntryType type, const Slice &key,
   default:
     assert(0);
   }
+  return Status::OK();
 }
 
 Cache::Handle *UniCacheFix::Lookup(UniCacheEntryType type, const Slice &key,
                                    Statistics *stats) {
-  switch (type) {
-  case kKV:
+  assert(type == kKV || type == kKP);
+  if (type == kKV) {
     return kv_cache_->Lookup(key, stats);
-  case kKP:
+  } else {
     return kp_cache_->Lookup(key, stats);
-  default:
-    assert(0);
   }
 }
 
 bool UniCacheFix::Ref(UniCacheEntryType type, Cache::Handle *handle) {
-  switch (type) {
-  case kKV:
+  assert(type == kKV || type == kKP);
+  if (type == kKV) {
     return kv_cache_->Ref(handle);
-  case kKP:
+  } else {
     return kp_cache_->Ref(handle);
-  default:
-    assert(0);
   }
 }
 
 bool UniCacheFix::Release(UniCacheEntryType type, Cache::Handle *handle,
                           bool force_erase) {
-  switch (type) {
-  case kKV:
+  assert(type == kKV || type == kKP);
+  if (type == kKV) {
     return kv_cache_->Release(handle, force_erase);
-  case kKP:
+  } else {
     return kp_cache_->Release(handle, force_erase);
-  default:
-    assert(0);
   }
 }
 
@@ -96,6 +91,7 @@ void *UniCacheFix::Value(UniCacheEntryType type, Cache::Handle *handle) {
   default:
     assert(0);
   }
+  return nullptr;
 }
 
 void UniCacheFix::Erase(UniCacheEntryType type, const Slice &key) {
@@ -119,8 +115,8 @@ void UniCacheFix::SetCapacity(size_t capacity) {
 
 void UniCacheFix::SetCapacity(UniCacheEntryType type, size_t capacity) {
   size_t old_capacity = GetCapacity();
-  size_t kv_cache_capacity;
-  size_t kp_cache_capacity;
+  size_t kv_cache_capacity = 0;
+  size_t kp_cache_capacity = 0;
 
   switch (type) {
   case kKV:
@@ -163,6 +159,7 @@ size_t UniCacheFix::GetCapacity(UniCacheEntryType type) const {
   default:
     assert(0);
   }
+  return 0;
 }
 
 size_t UniCacheFix::GetUsage() const {
@@ -178,6 +175,7 @@ size_t UniCacheFix::GetUsage(UniCacheEntryType type) const {
   default:
     assert(0);
   }
+  return 0;
 }
 
 size_t UniCacheFix::GetUsage(Cache::Handle *handle) const {
@@ -194,6 +192,7 @@ size_t UniCacheFix::GetUsage(UniCacheEntryType type,
   default:
     assert(0);
   }
+  return 0;
 }
 
 size_t UniCacheFix::GetPinnedUsage() const {
@@ -523,6 +522,7 @@ bool UniCacheAdapt::Release(const UniCacheAdaptHandle &arc_handle,
   default:
     assert(0);
   }
+  return false;
 }
 
 void *UniCacheAdapt::Value(const UniCacheAdaptHandle &arc_handle) {

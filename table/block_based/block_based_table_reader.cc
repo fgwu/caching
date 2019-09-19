@@ -2845,8 +2845,8 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
       return biter.status();
     }
 
-    bool may_exist = biter.SeekForGet(key);
-    assert(may_exist); // the key must exist.
+    //    bool may_exist = biter.SeekForGet(key);
+    assert(biter.SeekForGet(key)); // the key must exist.
 
     // Call the *saver function on each entry/block until it returns false
     for (; biter.Valid(); biter.Next()) {
