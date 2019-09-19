@@ -2293,7 +2293,7 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
         found_kp_entry_valid) {
       // if kp_cache_entry is valid, it should have return already in the
       // switch case. The execution should never reach here.
-      assert(0);
+      abort();
     }
     f = fp.GetNextFile();
   }

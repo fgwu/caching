@@ -4695,9 +4695,6 @@ class Benchmark {
       }
       read++;
       Status s;
-      if (key.ToString(true) == "36C3030303030303030") {
-	;
-      }
       if (FLAGS_num_column_families > 1) {
         s = db_with_cfh->db->Get(options, db_with_cfh->GetCfh(key_rand), key,
                                  &pinnable_val);
