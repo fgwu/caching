@@ -2254,7 +2254,8 @@ void Version::GetWithUniCacheAdapt(const ReadOptions &read_options,
         switch (data_entry_to_insert->data_type) {
         case kKV:
           data_entry_to_insert->kv_entry()->level =
-              (found_data_entry->data_type == kKP && found_kp_entry_valid)
+              (found_data_entry && found_data_entry->data_type == kKP
+	       && found_kp_entry_valid)
                   ? found_data_entry->kp_entry()->file_pointer.level
                   : fp.GetSavedFileLevel();
           break;

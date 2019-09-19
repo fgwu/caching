@@ -3707,7 +3707,7 @@ class Benchmark {
       }
     }
     if (FLAGS_uni_cache_size) {
-      assert(FLAGS_cache_numshardbits == 1);
+      assert(FLAGS_cache_numshardbits == 0); // force no shard.
       if (FLAGS_uni_cache_adapt) {
         if (FLAGS_cache_numshardbits >= 1) {
           options.uni_cache =
@@ -4695,6 +4695,9 @@ class Benchmark {
       }
       read++;
       Status s;
+      if (key.ToString(true) == "36C3030303030303030") {
+	;
+      }
       if (FLAGS_num_column_families > 1) {
         s = db_with_cfh->db->Get(options, db_with_cfh->GetCfh(key_rand), key,
                                  &pinnable_val);
